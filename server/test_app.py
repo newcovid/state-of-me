@@ -109,6 +109,23 @@ class ContractTests(unittest.TestCase):
         self.assertTrue(m.active_music({'playing':True}))
         self.assertFalse(m.active_music({'playing':False}))
 
+    def test_public_subfield_scopes_hide_diagnostics(self):
+        self.cfg['devices']['phone'].update(device_state=True,app_details=True)
+        self.cfg['public']={'enabled':True,'devices':['phone'],'fields':['app','app_details','device_state'],
+                           'device_state_fields':['battery_percent','charging','locked'], 'app_details_fields':['label']}
+        Path(m.CONFIG).write_text(json.dumps(self.cfg))
+        self.send(app='editor',app_details={'label':'Editor','active_for_ms':1234},
+                  device_state={'battery_percent':80,'charging':True,'locked':False,'battery_temperature_c':35,'power_save':True})
+        item=self.client.get('/v1/public/status').json()['devices'][0]
+        self.assertEqual(set(item['device_state']),{'battery_percent','charging','locked'})
+        self.assertEqual(item['app_details'],{'label':'Editor'})
+        self.cfg['public']['device_state_fields']=[]
+        self.cfg['public']['app_details_fields']=[]
+        Path(m.CONFIG).write_text(json.dumps(self.cfg))
+        item=self.client.get('/v1/public/status').json()['devices'][0]
+        self.assertNotIn('device_state',item)
+        self.assertNotIn('app_details',item)
+
     def test_scope_replay_and_clear(self):
         self.assertEqual(self.client.get('/v1/status',headers=self.wh).status_code,401)
         self.assertEqual(self.client.post('/v1/events',headers=self.rh,json={'seq':1,'observed_at':time.time()}).status_code,401)

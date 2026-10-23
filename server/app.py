@@ -13,7 +13,7 @@ from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-app = FastAPI(title="State of Me", version="0.8.1")
+app = FastAPI(title="State of Me", version="0.8.2")
 DB = os.getenv("SOM_DB", "state.db")
 CONFIG = os.getenv("SOM_CONFIG", "config.json")
 WEB = Path(__file__).parent / "web"
@@ -200,7 +200,7 @@ async def guard(request: Request, call_next):
 def health():
     with db() as conn:
         conn.execute("SELECT 1")
-    return {"ok": True, "version": "0.8.1"}
+    return {"ok": True, "version": "0.8.2"}
 
 
 @app.post("/v1/events")
@@ -282,7 +282,12 @@ def project(cfg, audience):
         for field in CONTEXT_FIELDS:
             if field in fields and device.get(field, False) and data.get(field):
                 if field != 'app_details' or item.get('app'):
-                    item[field] = data[field]
+                    value = data[field]
+                    # Audience subfield scopes prevent a broad category leaking diagnostics.
+                    if field + '_fields' in audience:
+                        value = {k: v for k, v in value.items() if k in audience[field + '_fields']}
+                    if value:
+                        item[field] = value
         if any(item.get(field) for field in ('app', 'music', *CONTEXT_FIELDS)):
             result.append(item)
     return {"status": "available" if result else "unavailable", "devices": result, "refresh_seconds": 5, "server_time": now}

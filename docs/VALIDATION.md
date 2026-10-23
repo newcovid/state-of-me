@@ -50,3 +50,8 @@ Python 13 项合约/适配测试通过；Node 播放测试通过；Java 限流�
 ## 0.8.1 current-activity fix
 
 29 Python tests and JS playback checks pass; APK compiled, signed and installed. Backend health and AstrBot plugin load report 0.8.1. No group test messages were sent. Current-activity semantics and timing limits are in PLAYBACK-API.md.
+
+
+## 0.8.2 public status widget
+
+30 Python tests, playback JS tests and widget signal contracts pass. Browser fixture verified playing-to-paused removal without losing basic state; live blog battery/charging and light/dark appearance verified. Public category subfield scopes exclude diagnostics and application duration. See PUBLIC-WIDGET-0.8.2.md.
