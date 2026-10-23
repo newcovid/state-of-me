@@ -16,7 +16,11 @@
 
 播放器默认 Poweramp 包名 `com.maxmpz.audioplayer`。其他播放器可在客户端和服务端两处添加。允许常驻通知；ROM 省电策略可能停止后台服务，需在系统设置允许后台运行。没有自动开机启动。
 
-歌词选择本地 UTF-8 LRC，填写与播放器一致的歌曲名。首版按标题匹配，同名不同版本请人工确认；不同歌曲应重新选择或清除。时间偏移标签、编码转换和逐字格式尚未支持。
+点击“授权音乐目录并索引内嵌歌词”，通过 Android 系统目录选择器选音乐目录。只授予读取权限，不需要 Root。等待索引完成，播放目录中的歌曲；按标题、歌手、专辑（播放器提供时）、时长±2秒匹配，多个匹配文件会拒绝选取。更改音乐库后重新索引。撤销按钮会释放目录权限并清除索引。
+
+支持 MP3 ID3v2.3/v2.4 USLT、毫秒制 SYLT；FLAC Vorbis LYRICS/UNSYNCEDLYRICS/SYNCEDLYRICS；M4A/MP4 ©lyr。无时间轴只报告 plain，不发送完整歌词。少数压缩/全局 unsynchronization/extended-header ID3、其他封装尚不支持；不声称全部标签等价于 TagLib。原始 AAC 无标签时不能提取歌词。
+
+可选手动 UTF-8 LRC，按填写标题绑定，属于用户显式选择的兜底，同名版本需自行确认。支持 LRC offset 毫秒偏移；逐字格式暂不支持。
 
 ## Windows
 
@@ -27,8 +31,10 @@
 复制 `integrations/astrbot` 为插件目录 `state_of_me`。在 AstrBot 数据目录放置仅服务账户可读的 `state-of-me.json`：
 
 ```json
-{"url":"https://presence.example.com","groups":{"YOUR_GROUP_ID":{"token":"GROUP_READ_ONLY_TOKEN"}}}
+{"url":"https://presence.example.com","groups":{"YOUR_GROUP_ID":{"token":"GROUP_READ_ONLY_TOKEN","owner_qq":"OWNER_QQ","owner_aliases":[]}}}
 ```
+
+将 OWNER_QQ 替换为实际设备主人的数字 QQ 号，只放私有配置。“我”按当前事件发送者解析；“群主”实时查成员列表的 owner；支持真实 @、QQ 号及明确配置的主人别名。指代不清或多目标会要求明确，不用模型猜测。插件按群注入可信身份说明，不污染其他群人格。
 
 重载插件，在目标群人格工具列表添加 `get_my_status`。工具通过真实事件取得群号，不接受模型指定群号。不会主动发送 QQ 消息；QQ 适配器需已登录在线。
 

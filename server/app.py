@@ -7,12 +7,13 @@ import sqlite3
 import time
 from contextlib import contextmanager
 from pathlib import Path
+from typing import Literal
 
 from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
-app = FastAPI(title="State of Me", version="0.1.0")
+app = FastAPI(title="State of Me", version="0.2.0")
 DB = os.getenv("SOM_DB", "state.db")
 CONFIG = os.getenv("SOM_CONFIG", "config.json")
 WEB = Path(__file__).parent / "web"
@@ -27,6 +28,7 @@ class Music(BaseModel):
     position_ms: int = Field(default=0, ge=0, le=604800000)
     duration_ms: int = Field(default=0, ge=0, le=604800000)
     lyric: str | None = Field(default=None, max_length=500)
+    lyric_status: Literal['unavailable', 'synced', 'plain', 'ambiguous', 'unmatched', 'permission_required', 'unsupported'] = 'unavailable'
 
 
 class Event(BaseModel):
@@ -92,7 +94,7 @@ async def guard(request: Request, call_next):
 def health():
     with db() as conn:
         conn.execute("SELECT 1")
-    return {"ok": True, "version": "0.1.0"}
+    return {"ok": True, "version": "0.2.0"}
 
 
 @app.post("/v1/events")
@@ -113,6 +115,7 @@ def ingest(event: Event, authorization: str | None = Header(default=None)):
             value["music"] = None
         elif value["music"] and not rule.get("lyrics", False):
             value["music"]["lyric"] = None
+            value["music"]["lyric_status"] = 'unavailable'
     with db() as conn:
         conn.execute("BEGIN IMMEDIATE")
         old = conn.execute("SELECT seq, received FROM snapshots WHERE device=?", (device,)).fetchone()
@@ -148,6 +151,7 @@ def project(cfg, audience):
             # Never extrapolate stale lyrics; collector sends only the current line.
             if "lyric" not in fields or not device.get("lyrics", False):
                 music["lyric"] = None
+                music["lyric_status"] = 'unavailable'
             item["music"] = music
         if item.get("app") or item.get("music"):
             result.append(item)

@@ -12,6 +12,7 @@ import java.util.*;
 import java.util.concurrent.*;
 
 public class Collector extends Service {
+ String lyricKey=""; MusicLibrary.Result embedded=new MusicLibrary.Result();
  ScheduledExecutorService executor;android.content.SharedPreferences prefs;volatile boolean stopping;
  @Override public void onCreate(){super.onCreate();prefs=getSharedPreferences("som",0);NotificationManager nm=getSystemService(NotificationManager.class);nm.createNotificationChannel(new NotificationChannel("sharing","状态分享",NotificationManager.IMPORTANCE_LOW));
   PendingIntent open=PendingIntent.getActivity(this,0,new Intent(this,MainActivity.class),PendingIntent.FLAG_IMMUTABLE);
@@ -36,7 +37,13 @@ public class Collector extends Service {
      for(MediaController c:cs){if(!allowed("players",c.getPackageName())||c.getMetadata()==null||c.getPlaybackState()==null)continue;if(c.getPlaybackState().getState()!=PlaybackState.STATE_PLAYING&&c.getPlaybackState().getState()!=PlaybackState.STATE_PAUSED)continue;if(chosen==null)chosen=c;PlaybackState p=c.getPlaybackState();if(p!=null&&p.getState()==PlaybackState.STATE_PLAYING){chosen=c;break;}}
      if(chosen!=null){MediaMetadata m=chosen.getMetadata();PlaybackState p=chosen.getPlaybackState();String title=trim(m.getString(MediaMetadata.METADATA_KEY_TITLE),200);boolean playing=p!=null&&p.getState()==PlaybackState.STATE_PLAYING;long pos=p==null?0:Math.max(0,p.getPosition());if(playing)pos+=(long)((SystemClock.elapsedRealtime()-p.getLastPositionUpdateTime())*p.getPlaybackSpeed());long duration=Math.max(0,m.getLong(MediaMetadata.METADATA_KEY_DURATION));if(duration>0)pos=Math.min(pos,duration);
       JSONObject music=new JSONObject().put("title",title).put("artist",trim(m.getString(MediaMetadata.METADATA_KEY_ARTIST),200)).put("player",chosen.getPackageName()).put("playing",playing).put("position_ms",Math.min(604800000,Math.max(0,pos))).put("duration_ms",Math.min(duration,604800000));
-      if(title.equals(prefs.getString("lyricTitle",""))){String line=Lyrics.current(prefs.getString("lrc",""),pos);if(line!=null)music.put("lyric",line);}e.put("music",music);
+      String artist=trim(m.getString(MediaMetadata.METADATA_KEY_ARTIST),200),album=trim(m.getString(MediaMetadata.METADATA_KEY_ALBUM),200);
+      String key=title+"\u0001"+artist+"\u0001"+album+"\u0001"+duration+"/"+prefs.getLong("libraryVersion",0)+"/"+MusicLibrary.hasReadPermission(this);
+      if(!key.equals(lyricKey)){embedded=MusicLibrary.find(this,title,artist,album,duration);lyricKey=key;}
+      String lyricStatus=embedded.status;
+      if(embedded.lyrics!=null&&"synced".equals(lyricStatus)){String line=Lyrics.current(embedded.lyrics,pos);if(line!=null)music.put("lyric",line);}
+      else if(title.equals(prefs.getString("lyricTitle",""))&&!prefs.getString("lrc","").isEmpty()){String manual=prefs.getString("lrc","");lyricStatus=Lyrics.hasTimeline(manual)?"synced":"plain";String line=Lyrics.current(manual,pos);if(line!=null)music.put("lyric",line);}
+      music.put("lyric_status",lyricStatus);prefs.edit().putString("lyricStatus",lyricStatus).apply();e.put("music",music);
      }
     }catch(SecurityException ex){prefs.edit().putString("status","通知访问未授权；只能发送已允许的应用").apply();}
    }

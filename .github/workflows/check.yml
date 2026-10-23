@@ -11,7 +11,7 @@ jobs:
         with:
           python-version: '3.13'
       - run: pip install -r server/requirements.txt httpx
-      - run: python -m unittest server.test_app -v
+      - run: python -m unittest server.test_app integrations.astrbot.test_identity integrations.astrbot.test_adapter -v
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -20,6 +20,8 @@ jobs:
           mkdir -p /tmp/lyrics-test
           javac -encoding UTF-8 -d /tmp/lyrics-test clients/android/src/io/github/stateofme/Lyrics.java clients/android/tests/LyricsTest.java
           java -cp /tmp/lyrics-test LyricsTest
+          javac -encoding UTF-8 -d /tmp/lyrics-test clients/android/src/io/github/stateofme/EmbeddedLyrics.java clients/android/src/io/github/stateofme/TrackMatch.java clients/android/src/io/github/stateofme/Lyrics.java clients/android/tests/EmbeddedLyricsTest.java
+          java -cp /tmp/lyrics-test EmbeddedLyricsTest
   windows:
     runs-on: windows-latest
     steps:
