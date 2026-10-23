@@ -17,11 +17,19 @@
     this.nodes.grip.onpointerup=this.nodes.grip.onpointercancel=()=>{this.drag=null;};
     this.nodes.grip.onkeydown=e=>{const delta={ArrowLeft:[-16,0],ArrowRight:[16,0],ArrowUp:[0,-16],ArrowDown:[0,16]}[e.key];if(delta){e.preventDefault();const r=this.getBoundingClientRect();this.move(r.left+delta[0],r.top+delta[1]);}};
    }
-   this.onResize=()=>this.clamp();window.addEventListener('resize',this.onResize);this.theme=()=>{const body=getComputedStyle(document.body),html=getComputedStyle(document.documentElement);this.style.setProperty('--som-fg',body.color);this.style.setProperty('--som-bg',body.backgroundColor==='rgba(0, 0, 0, 0)'?html.backgroundColor:body.backgroundColor);};this.observer=new MutationObserver(this.theme);this.observer.observe(document.documentElement,{attributes:true,attributeFilter:['class','style','data-theme']});this.observer.observe(document.body,{attributes:true,attributeFilter:['class','style','data-theme']});this.theme();this.update();this.poll=setInterval(()=>this.update(),5000);this.frame();
+   this.onResize=()=>this.clamp();window.addEventListener('resize',this.onResize);this.theme=()=>{const body=getComputedStyle(document.body),html=getComputedStyle(document.documentElement);this.style.setProperty('--som-fg',body.color);this.style.setProperty('--som-bg',body.backgroundColor==='rgba(0, 0, 0, 0)'?html.backgroundColor:body.backgroundColor);};// Themes use different attributes (e.g. theme/data-color-scheme), not only classes.
+   this.scheduleTheme=()=>{cancelAnimationFrame(this.themeFrame);this.themeFrame=requestAnimationFrame(this.theme);};
+   this.observer=new MutationObserver(this.scheduleTheme);
+   this.observer.observe(document.documentElement,{attributes:true});
+   this.observer.observe(document.body,{attributes:true});
+   this.colorPreference=matchMedia('(prefers-color-scheme: dark)');
+   this.colorPreference.addEventListener('change',this.scheduleTheme);
+   document.body.addEventListener('transitionend',this.scheduleTheme);
+   this.theme();this.update();this.poll=setInterval(()=>this.update(),5000);this.frame();
   }
   move(x,y){this.style.right='auto';this.style.bottom='auto';this.style.left=Math.max(8,Math.min(x,innerWidth-this.offsetWidth-8))+'px';this.style.top=Math.max(8,Math.min(y,innerHeight-this.offsetHeight-8))+'px';}
   clamp(){const r=this.getBoundingClientRect();if(this.style.left||r.right>innerWidth||r.bottom>innerHeight)this.move(r.left,r.top);}
-  disconnectedCallback(){clearInterval(this.poll);cancelAnimationFrame(this.animation);this.abort?.abort();this.observer?.disconnect();window.removeEventListener('resize',this.onResize);this.poll=null;this.music=null;}
+  disconnectedCallback(){clearInterval(this.poll);cancelAnimationFrame(this.animation);this.abort?.abort();this.observer?.disconnect();cancelAnimationFrame(this.themeFrame);this.colorPreference?.removeEventListener('change',this.scheduleTheme);document.body.removeEventListener('transitionend',this.scheduleTheme);window.removeEventListener('resize',this.onResize);this.poll=null;this.music=null;}
   text(node,value){if(node.textContent!==value)node.textContent=value;}
   empty(){this.music=null;this.text(this.nodes.state,'暂无分享');this.text(this.nodes.title,'暂无公开音乐');this.text(this.nodes.artist,'等待设备分享');this.text(this.nodes.line,'音乐响起时，在这里见。');this.text(this.nodes.next,'');this.text(this.nodes.time,'—');this.bar.value=0;}
   frame(){if(!this.isConnected)return;const m=this.music,now=performance.now();if(m&&now>=this.expires)this.empty();else if(m){const pos=Math.min(m.duration_ms||604800000,m.position_ms+(m.playing?(now-this.anchor)*(m.playback_rate??1):0));let line=m.lyric,next='';const w=m.lyric_window;if(w){line=null;if(pos>=w.start_ms&&pos<w.end_ms){for(let i=0;i<w.lines.length;i++){if(w.lines[i].at_ms<=pos){line=w.lines[i].text;next=w.lines[i+1]?.text||'';}else break;}}}this.text(this.nodes.line,line??(m.lyric_status==='plain'?'歌词暂无同步时间轴':'暂无同步歌词'));this.text(this.nodes.next,next);this.bar.max=m.duration_ms||1;this.bar.value=pos;const format=x=>Math.floor(x/60000)+':'+String(Math.floor(x/1000)%60).padStart(2,'0');this.text(this.nodes.time,format(pos)+(m.duration_ms?' / '+format(m.duration_ms):''));}this.animation=requestAnimationFrame(()=>this.frame());}
