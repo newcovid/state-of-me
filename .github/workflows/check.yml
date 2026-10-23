@@ -1,0 +1,30 @@
+name: Check
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - run: pip install -r server/requirements.txt httpx
+      - run: python -m unittest server.test_app -v
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - run: |
+          mkdir -p /tmp/lyrics-test
+          javac -encoding UTF-8 -d /tmp/lyrics-test clients/android/src/io/github/stateofme/Lyrics.java clients/android/tests/LyricsTest.java
+          java -cp /tmp/lyrics-test LyricsTest
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - run: dotnet build clients/windows -c Release

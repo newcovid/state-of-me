@@ -1,0 +1,12 @@
+{
+  "ttl_seconds": 45,
+  "devices": {
+    "phone": {"token": "REPLACE_WITH_RANDOM_DEVICE_TOKEN", "apps": [], "players": ["com.maxmpz.audioplayer"], "lyrics": false},
+    "desktop": {"token": "REPLACE_WITH_DIFFERENT_DEVICE_TOKEN", "apps": ["Code", "notepad"], "players": []}
+  },
+  "readers": {
+    "owner": {"token": "REPLACE_WITH_RANDOM_READ_ONLY_TOKEN", "devices": ["phone", "desktop"], "fields": ["app", "music", "lyric"]},
+    "group": {"token": "REPLACE_WITH_GROUP_READ_ONLY_TOKEN", "devices": ["phone", "desktop"], "fields": ["app", "music"]}
+  },
+  "public": {"enabled": false, "devices": [], "fields": []}
+}
