@@ -4,6 +4,22 @@ import java.util.regex.*;
 
 public final class Lyrics {
  public static final class Line {public final long at;public final String text;Line(long a,String t){at=a;text=t;}}
+ public static final class Window {
+  public final long start,end;public final List<Line> lines;
+  Window(long s,long e,List<Line> l){start=s;end=e;lines=Collections.unmodifiableList(l);}
+ }
+ /** Provider-independent bounded window. Input is the sorted output of parse(). */
+ public static Window window(List<Line> timeline,long position,long duration){
+  if(timeline.isEmpty())return null;
+  position=Math.max(0,Math.min(604800000,position));
+  int first=0;while(first+1<timeline.size()&&timeline.get(first+1).at<=position)first++;
+  long start=Math.min(position,timeline.get(first).at),end=Math.min(604800001,position+60000);
+  if(duration>position)end=Math.min(end,duration+1);
+  List<Line> lines=new ArrayList<>();int i=first;
+  for(;i<timeline.size()&&timeline.get(i).at<end&&lines.size()<16;i++)lines.add(timeline.get(i));
+  if(i<timeline.size()&&timeline.get(i).at<end)end=timeline.get(i).at;
+  return new Window(start,end,lines);
+ }
  public static List<Line> parse(String lrc){
   TreeMap<Long,String> sorted=new TreeMap<>();
   Matcher off=Pattern.compile("\\[offset:([+-]?\\d{1,8})\\]",Pattern.CASE_INSENSITIVE).matcher(lrc);

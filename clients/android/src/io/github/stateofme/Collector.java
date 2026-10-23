@@ -16,14 +16,10 @@ public class Collector extends Service {
  String timelineSource="";List<Lyrics.Line> timeline=Collections.emptyList();
  JSONObject window(String source,long position,long duration)throws Exception{
   if(!source.equals(timelineSource)){timeline=Lyrics.parse(source);timelineSource=source;}
-  if(timeline.isEmpty())return null;
-  int first=0;while(first+1<timeline.size()&&timeline.get(first+1).at<=position)first++;
-  long start=Math.min(position,timeline.get(first).at),end=Math.min(604800001,position+60000);
-  if(duration>position)end=Math.min(end,duration+1);
-  JSONArray lines=new JSONArray();int i=first;
-  for(;i<timeline.size()&&timeline.get(i).at<end&&lines.length()<16;i++){Lyrics.Line line=timeline.get(i);lines.put(new JSONObject().put("at_ms",line.at).put("text",line.text));}
-  if(i<timeline.size()&&timeline.get(i).at<end)end=timeline.get(i).at;
-  return new JSONObject().put("start_ms",start).put("end_ms",end).put("lines",lines);
+  Lyrics.Window window=Lyrics.window(timeline,position,duration);if(window==null)return null;
+  JSONArray lines=new JSONArray();
+  for(Lyrics.Line line:window.lines)lines.put(new JSONObject().put("at_ms",line.at).put("text",line.text));
+  return new JSONObject().put("start_ms",window.start).put("end_ms",window.end).put("lines",lines);
  }
  ScheduledExecutorService executor;android.content.SharedPreferences prefs;volatile boolean stopping;
  @Override public void onCreate(){super.onCreate();prefs=getSharedPreferences("som",0);NotificationManager nm=getSystemService(NotificationManager.class);nm.createNotificationChannel(new NotificationChannel("sharing","状态分享",NotificationManager.IMPORTANCE_LOW));
