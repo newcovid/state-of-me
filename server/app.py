@@ -13,7 +13,7 @@ from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-app = FastAPI(title="State of Me", version="0.3.0")
+app = FastAPI(title="State of Me", version="0.4.0")
 DB = os.getenv("SOM_DB", "state.db")
 CONFIG = os.getenv("SOM_CONFIG", "config.json")
 WEB = Path(__file__).parent / "web"
@@ -118,7 +118,7 @@ async def guard(request: Request, call_next):
 def health():
     with db() as conn:
         conn.execute("SELECT 1")
-    return {"ok": True, "version": "0.3.0"}
+    return {"ok": True, "version": "0.4.0"}
 
 
 @app.post("/v1/events")

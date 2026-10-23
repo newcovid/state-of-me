@@ -12,6 +12,25 @@ import java.util.*;
 import java.util.concurrent.*;
 
 public class Collector extends Service {
+ MediaController watched;ScheduledFuture<?> pending;long completedAt;
+ final MediaController.Callback playbackCallback=new MediaController.Callback(){
+  @Override public void onPlaybackStateChanged(PlaybackState state){requestUpdate();}
+  @Override public void onMetadataChanged(MediaMetadata metadata){requestUpdate();}
+  @Override public void onSessionDestroyed(){requestUpdate();}
+ };
+ void requestUpdate(){
+  if(executor==null||executor.isShutdown())return;
+  try{executor.execute(()->{
+   if(!prefs.getBoolean("enabled",false)||pending!=null&&!pending.isDone())return;
+   long delay=UpdateTiming.delay(SystemClock.elapsedRealtime(),completedAt);
+   pending=executor.schedule(()->{pending=null;if(prefs.getBoolean("enabled",false)){send(false);completedAt=SystemClock.elapsedRealtime();}},delay,TimeUnit.MILLISECONDS);
+  });}catch(RejectedExecutionException ignored){}
+ }
+ void watch(MediaController controller){
+  if(watched!=null&&controller!=null&&watched.getSessionToken().equals(controller.getSessionToken()))return;
+  if(watched!=null)watched.unregisterCallback(playbackCallback);
+  watched=controller;if(watched!=null)watched.registerCallback(playbackCallback,new Handler(Looper.getMainLooper()));
+ }
  String lyricKey=""; MusicLibrary.Result embedded=new MusicLibrary.Result();
  String timelineSource="";List<Lyrics.Line> timeline=Collections.emptyList();
  JSONObject window(String source,long position,long duration)throws Exception{
@@ -27,7 +46,7 @@ public class Collector extends Service {
   PendingIntent stop=PendingIntent.getService(this,1,new Intent(this,Collector.class).setAction("stop"),PendingIntent.FLAG_IMMUTABLE);
   Notification n=new Notification.Builder(this,"sharing").setSmallIcon(android.R.drawable.ic_menu_info_details).setContentTitle("State of Me 正在分享允许的状态").setContentText("点击查看权限和过滤；暂停会清空状态").setContentIntent(open).addAction(new Notification.Action.Builder(null,"暂停",stop).build()).setOngoing(true).build();startForeground(1,n);executor=Executors.newSingleThreadScheduledExecutor();
  }
- @Override public int onStartCommand(Intent i,int flags,int id){if(i!=null&&"stop".equals(i.getAction())){stopping=true;prefs.edit().putBoolean("enabled",false).apply();executor.execute(()->{send(true);stopForeground(STOP_FOREGROUND_REMOVE);stopSelf();});}else if(!prefs.getBoolean("enabled",false)){stopSelf();}else if(!stopping){executor.scheduleWithFixedDelay(()->send(false),0,5,TimeUnit.SECONDS);stopping=true;}return START_NOT_STICKY;}
+ @Override public int onStartCommand(Intent i,int flags,int id){if(i!=null&&"stop".equals(i.getAction())){stopping=true;prefs.edit().putBoolean("enabled",false).apply();executor.execute(()->{send(true);stopForeground(STOP_FOREGROUND_REMOVE);stopSelf();});}else if(!prefs.getBoolean("enabled",false)){stopSelf();}else if(!stopping){executor.scheduleWithFixedDelay(()->requestUpdate(),0,5,TimeUnit.SECONDS);stopping=true;}return START_NOT_STICKY;}
  boolean allowed(String list,String item){for(String s:prefs.getString(list,"").split(","))if(s.trim().equals(item))return true;return false;}
  String trim(String s,int n){if(s==null)return "";return s.substring(0,Math.min(n,s.length()));}
  void send(boolean forceHidden){
@@ -43,6 +62,7 @@ public class Collector extends Service {
     try{
      List<MediaController> cs=getSystemService(MediaSessionManager.class).getActiveSessions(new ComponentName(this,MediaAccess.class));MediaController chosen=null;
      for(MediaController c:cs){if(!allowed("players",c.getPackageName())||c.getMetadata()==null||c.getPlaybackState()==null)continue;if(c.getPlaybackState().getState()!=PlaybackState.STATE_PLAYING&&c.getPlaybackState().getState()!=PlaybackState.STATE_PAUSED)continue;if(chosen==null)chosen=c;PlaybackState p=c.getPlaybackState();if(p!=null&&p.getState()==PlaybackState.STATE_PLAYING){chosen=c;break;}}
+     watch(chosen);
      if(chosen!=null){MediaMetadata m=chosen.getMetadata();PlaybackState p=chosen.getPlaybackState();String title=trim(m.getString(MediaMetadata.METADATA_KEY_TITLE),200);boolean playing=p!=null&&p.getState()==PlaybackState.STATE_PLAYING;long pos=p==null?0:Math.max(0,p.getPosition());if(playing)pos+=(long)((SystemClock.elapsedRealtime()-p.getLastPositionUpdateTime())*p.getPlaybackSpeed());long duration=Math.max(0,m.getLong(MediaMetadata.METADATA_KEY_DURATION));if(duration>0)pos=Math.min(pos,duration);
       JSONObject music=new JSONObject().put("title",title).put("artist",trim(m.getString(MediaMetadata.METADATA_KEY_ARTIST),200)).put("player",chosen.getPackageName()).put("playing",playing).put("position_ms",Math.min(604800000,Math.max(0,pos))).put("duration_ms",Math.min(duration,604800000));
       String artist=trim(m.getString(MediaMetadata.METADATA_KEY_ARTIST),200),album=trim(m.getString(MediaMetadata.METADATA_KEY_ALBUM),200);
@@ -65,5 +85,5 @@ public class Collector extends Service {
   }catch(Exception ex){prefs.edit().putString("status","连接失败；旧状态最多保留 45 秒").apply();}
  }
  @Override public IBinder onBind(Intent i){return null;}
- @Override public void onDestroy(){if(executor!=null)executor.shutdownNow();super.onDestroy();}
+ @Override public void onDestroy(){watch(null);if(executor!=null)executor.shutdownNow();super.onDestroy();}
 }

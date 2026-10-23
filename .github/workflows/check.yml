@@ -21,6 +21,8 @@ jobs:
           mkdir -p /tmp/lyrics-test
           javac -encoding UTF-8 -d /tmp/lyrics-test clients/android/src/io/github/stateofme/Lyrics.java clients/android/tests/LyricsTest.java
           java -cp /tmp/lyrics-test LyricsTest
+          javac -d /tmp/lyrics-test clients/android/src/io/github/stateofme/UpdateTiming.java clients/android/tests/UpdateTimingTest.java
+          java -cp /tmp/lyrics-test UpdateTimingTest
           javac -encoding UTF-8 -d /tmp/lyrics-test clients/android/src/io/github/stateofme/EmbeddedLyrics.java clients/android/src/io/github/stateofme/TrackMatch.java clients/android/src/io/github/stateofme/Lyrics.java clients/android/tests/EmbeddedLyricsTest.java
           java -cp /tmp/lyrics-test EmbeddedLyricsTest
   windows:
