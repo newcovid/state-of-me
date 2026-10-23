@@ -55,5 +55,34 @@ class ContractTests(unittest.TestCase):
         self.assertEqual(self.send(observed_at_bad=1).status_code,422)
         self.assertEqual(self.client.post('/v1/events',headers=self.wh,json={'seq':1,'observed_at':0}).status_code,422)
 
+    def test_window_projection_and_revocation(self):
+        self.cfg['readers']['viewer']['fields'] += ['lyric', 'lyric_window']
+        Path(m.CONFIG).write_text(json.dumps(self.cfg))
+        music = {'title':'Song', 'player':'player', 'playing':True, 'duration_ms':100000,
+                 'lyric_status':'synced', 'lyric_window':{'start_ms':0,'end_ms':60000,
+                 'lines':[{'at_ms':0,'text':'first'}, {'at_ms':2000,'text':'next'}]}}
+        self.assertEqual(self.send(music=music).status_code,200)
+        with m.db() as c:c.execute('UPDATE snapshots SET received=?',(time.time()-3,))
+        def read():return self.client.get('/v1/status',headers=self.rh).json()['devices'][0]['music']
+        self.assertEqual(read()['lyric'],'next')
+        self.assertIsNotNone(read()['lyric_window'])
+        self.cfg['readers']['viewer']['fields'].remove('lyric_window')
+        Path(m.CONFIG).write_text(json.dumps(self.cfg))
+        self.assertEqual(read()['lyric'],'next')
+        self.assertIsNone(read()['lyric_window'])
+        self.cfg['devices']['phone']['lyrics']=False
+        Path(m.CONFIG).write_text(json.dumps(self.cfg))
+        self.assertIsNone(read()['lyric'])
+        self.assertIsNone(read()['lyric_window'])
+
+    def test_window_validation_and_paused_clock(self):
+        base={'title':'Song','player':'player','position_ms':500,'playing':False}
+        bad={'start_ms':1000,'end_ms':500,'lines':[]}
+        self.assertEqual(self.send(music={**base,'lyric_window':bad}).status_code,422)
+        self.assertEqual(self.send(music={**base,'playback_rate':9}).status_code,422)
+        self.assertEqual(self.send(music=base).status_code,200)
+        with m.db() as c:c.execute('UPDATE snapshots SET received=?',(time.time()-3,))
+        self.assertEqual(self.client.get('/v1/status',headers=self.rh).json()['devices'][0]['music']['position_ms'],500)
+
 
 if __name__ == '__main__':unittest.main()

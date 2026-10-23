@@ -1,14 +1,28 @@
-let token='', mode='', busy=false;
+let token='',mode='',generation=0,inflight=null,views=[];
 const notice=document.querySelector('#notice'),cards=document.querySelector('#cards');
 function node(tag,text){const e=document.createElement(tag);e.textContent=text;return e;}
-function clear(){cards.replaceChildren();}
-async function refresh(){if(!mode||busy)return;busy=true;const generation=mode+token;try{
- const r=await fetch(mode==='public'?'v1/public/status':'v1/status',{headers:token?{Authorization:'Bearer '+token}:{},cache:'no-store',signal:AbortSignal.timeout(8000)});
+function clear(){views=[];cards.replaceChildren();}
+function text(e,value){if(e.textContent!==value)e.textContent=value;}
+function time(ms){return Math.floor(ms/60000)+':'+String(Math.floor(ms/1000)%60).padStart(2,'0');}
+const labels={plain:'歌词无时间轴，无法定位当前句',ambiguous:'存在多个匹配文件',unmatched:'未找到精确匹配歌曲',permission_required:'需要重新授权音乐目录',unsupported:'此标签格式暂不支持',synced:'当前时间点暂无缓存歌词'};
+function render(data){
+ const now=performance.now(),old=new Map(views.map(v=>[v.state.device,v]));views=[];
+ for(const state of data.devices){let v=old.get(state.device);if(!v){v={card:node('article',''),name:node('h2',''),app:node('p',''),title:node('h3',''),artist:node('p',''),clock:node('p',''),bar:node('progress',''),lyric:node('blockquote',''),age:node('small','')};v.bar.setAttribute('aria-label','播放进度');v.card.append(v.name,v.app,v.title,v.artist,v.clock,v.bar,v.lyric,v.age);}
+ v.state=state;v.anchor=now;v.expiry=now+state.expires_in*1000;v.name.textContent=state.device;v.app.textContent=state.app?'应用 · '+state.app:'';
+ const m=state.music;v.title.textContent=m?(m.playing?'播放中 · ':'已暂停 · ')+m.title:'';v.artist.textContent=m?.artist||'';v.bar.hidden=!m;views.push(v);
+ }
+ // Reuse existing nodes so polling does not interrupt lyric rendering.
+ cards.replaceChildren(...views.map(v=>v.card));
+}
+function frame(){const now=performance.now();for(const v of views){if(now>=v.expiry){v.card.remove();continue;}const m=v.state.music;if(!m){v.clock.textContent='';v.lyric.textContent='';continue;}const pos=Playback.position(m,now-v.anchor);text(v.clock,time(pos)+(m.duration_ms?' / '+time(m.duration_ms):''));v.bar.max=m.duration_ms||1;v.bar.value=pos;const line=Playback.lyric(m,pos);text(v.lyric,line??labels[m.lyric_status]??'未提供同步歌词');text(v.age,Math.floor(v.state.age_seconds+(now-v.anchor)/1000)+' 秒前采集');}views=views.filter(v=>now<v.expiry);requestAnimationFrame(frame);}
+async function refresh(){if(!mode||inflight)return;const own=generation,controller=new AbortController();inflight=controller;const timeout=setTimeout(()=>controller.abort(),8000);try{
+ const r=await fetch(mode==='public'?'v1/public/status':'v1/status',{headers:token?{Authorization:'Bearer '+token}:{},cache:'no-store',signal:controller.signal});
  if(!r.ok)throw Error(r.status===401?'令牌无效':r.status===404?'尚未开启公开分享':'服务暂不可用');
- const d=await r.json();if(generation!==mode+token)return;clear();notice.textContent=d.devices.length?'已更新 · '+new Date().toLocaleTimeString():'暂无可分享状态（离线、过期或已隐藏）';
- for(const s of d.devices){const c=node('article','');c.append(node('h2',s.device));if(s.app)c.append(node('p','应用 · '+s.app));if(s.music){const m=s.music;c.append(node('h3',(m.playing?'播放中 · ':'已暂停 · ')+m.title));c.append(node('p',m.artist));c.append(node('p',Math.floor(m.position_ms/60000)+':'+String(Math.floor(m.position_ms/1000)%60).padStart(2,'0')));c.append(node('blockquote',m.lyric||({plain:'有内嵌歌词，但无时间轴，无法定位当前句',ambiguous:'存在多个匹配文件，未选择歌词',unmatched:'授权目录中未找到精确匹配歌曲',permission_required:'需要重新授权音乐目录',unsupported:'此标签格式暂不支持',synced:'当前时间点暂无歌词'}[m.lyric_status]||'未提供同步歌词')));}c.append(node('small',s.age_seconds+' 秒前采集'));cards.append(c);}
- }catch(e){if(generation!==mode+token)return;clear();notice.textContent=e.message+'；旧状态已隐藏';}finally{busy=false;}}
-document.querySelector('#auth').onsubmit=e=>{e.preventDefault();token=document.querySelector('#token').value.trim();document.querySelector('#token').value='';mode='private';clear();refresh();};
-document.querySelector('#public').onclick=()=>{token='';mode='public';clear();refresh();};
-document.querySelector('#forget').onclick=()=>{token='';mode='';clear();notice.textContent='已断开';};
-setInterval(refresh,5000);
+ const d=await r.json();if(own!==generation)return;render(d);notice.textContent=d.devices.length?'已同步 · 歌词与进度在本页连续更新':'暂无可分享状态（离线、过期或已隐藏）';
+ }catch(e){if(own!==generation)return;clear();notice.textContent='连接失败；旧状态已隐藏';}finally{clearTimeout(timeout);if(inflight===controller)inflight=null;}}
+function connect(next,credential){generation++;inflight?.abort();inflight=null;token=credential;mode=next;clear();refresh();}
+document.querySelector('#auth').onsubmit=e=>{e.preventDefault();const value=document.querySelector('#token').value.trim();document.querySelector('#token').value='';connect('private',value);};
+document.querySelector('#public').onclick=()=>connect('public','');
+document.querySelector('#forget').onclick=()=>{connect('','');notice.textContent='已断开';};
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)refresh();});
+setInterval(refresh,5000);requestAnimationFrame(frame);

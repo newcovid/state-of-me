@@ -11,12 +11,33 @@ from typing import Literal
 
 from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-app = FastAPI(title="State of Me", version="0.2.0")
+app = FastAPI(title="State of Me", version="0.3.0")
 DB = os.getenv("SOM_DB", "state.db")
 CONFIG = os.getenv("SOM_CONFIG", "config.json")
 WEB = Path(__file__).parent / "web"
+
+
+class LyricLine(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    at_ms: int = Field(ge=0, le=604800000)
+    text: str = Field(max_length=200)
+
+
+class LyricWindow(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    start_ms: int = Field(ge=0, le=604800000)
+    end_ms: int = Field(ge=0, le=604800001)
+    lines: list[LyricLine] = Field(max_length=16)
+
+    @model_validator(mode='after')
+    def ordered(self):
+        if self.end_ms <= self.start_ms or any(
+            not self.start_ms <= x.at_ms < self.end_ms for x in self.lines
+        ) or any(a.at_ms >= b.at_ms for a, b in zip(self.lines, self.lines[1:])):
+            raise ValueError('Window must contain strictly ordered timestamps within bounds')
+        return self
 
 
 class Music(BaseModel):
@@ -27,6 +48,9 @@ class Music(BaseModel):
     playing: bool = False
     position_ms: int = Field(default=0, ge=0, le=604800000)
     duration_ms: int = Field(default=0, ge=0, le=604800000)
+    playback_rate: float = Field(default=1, ge=0, le=8, allow_inf_nan=False)
+    track_id: str = Field(default='', max_length=128)
+    lyric_window: LyricWindow | None = None
     lyric: str | None = Field(default=None, max_length=500)
     lyric_status: Literal['unavailable', 'synced', 'plain', 'ambiguous', 'unmatched', 'permission_required', 'unsupported'] = 'unavailable'
 
@@ -94,7 +118,7 @@ async def guard(request: Request, call_next):
 def health():
     with db() as conn:
         conn.execute("SELECT 1")
-    return {"ok": True, "version": "0.2.0"}
+    return {"ok": True, "version": "0.3.0"}
 
 
 @app.post("/v1/events")
@@ -116,6 +140,8 @@ def ingest(event: Event, authorization: str | None = Header(default=None)):
         elif value["music"] and not rule.get("lyrics", False):
             value["music"]["lyric"] = None
             value["music"]["lyric_status"] = 'unavailable'
+        if value['music'] and not rule.get('lyrics', False):
+            value['music']['lyric_window'] = None
     with db() as conn:
         conn.execute("BEGIN IMMEDIATE")
         old = conn.execute("SELECT seq, received FROM snapshots WHERE device=?", (device,)).fetchone()
@@ -148,14 +174,25 @@ def project(cfg, audience):
         music = data.get("music")
         if "music" in fields and music and music["player"] in device.get("players", []):
             music = dict(music)
-            # Never extrapolate stale lyrics; collector sends only the current line.
+            # Reception time anchors progress without depending on device wall clocks.
+            position = music['position_ms'] + (max(0, now-received)*1000*music.get('playback_rate', 1) if music['playing'] else 0)
+            music['position_ms'] = int(min(position, music['duration_ms'] or 604800000))
+            window = music.get('lyric_window')
+            if window:
+                music['lyric'] = None
+                if window['start_ms'] <= music['position_ms'] < window['end_ms']:
+                    for line in window['lines']:
+                        if line['at_ms'] <= music['position_ms']:
+                            music['lyric'] = line['text']
             if "lyric" not in fields or not device.get("lyrics", False):
                 music["lyric"] = None
                 music["lyric_status"] = 'unavailable'
+            if 'lyric_window' not in fields or 'lyric' not in fields or not device.get('lyrics', False):
+                music['lyric_window'] = None
             item["music"] = music
         if item.get("app") or item.get("music"):
             result.append(item)
-    return {"status": "available" if result else "unavailable", "devices": result, "refresh_seconds": 5}
+    return {"status": "available" if result else "unavailable", "devices": result, "refresh_seconds": 5, "server_time": now}
 
 
 @app.get("/v1/status")
@@ -187,3 +224,8 @@ def javascript():
 @app.get("/style.css")
 def css():
     return FileResponse(WEB / "style.css", media_type="text/css")
+
+
+@app.get('/playback.js')
+def playback_javascript():
+    return FileResponse(WEB / 'playback.js', media_type='text/javascript')

@@ -13,6 +13,18 @@ import java.util.concurrent.*;
 
 public class Collector extends Service {
  String lyricKey=""; MusicLibrary.Result embedded=new MusicLibrary.Result();
+ String timelineSource="";List<Lyrics.Line> timeline=Collections.emptyList();
+ JSONObject window(String source,long position,long duration)throws Exception{
+  if(!source.equals(timelineSource)){timeline=Lyrics.parse(source);timelineSource=source;}
+  if(timeline.isEmpty())return null;
+  int first=0;while(first+1<timeline.size()&&timeline.get(first+1).at<=position)first++;
+  long start=Math.min(position,timeline.get(first).at),end=Math.min(604800001,position+60000);
+  if(duration>position)end=Math.min(end,duration+1);
+  JSONArray lines=new JSONArray();int i=first;
+  for(;i<timeline.size()&&timeline.get(i).at<end&&lines.length()<16;i++){Lyrics.Line line=timeline.get(i);lines.put(new JSONObject().put("at_ms",line.at).put("text",line.text));}
+  if(i<timeline.size()&&timeline.get(i).at<end)end=timeline.get(i).at;
+  return new JSONObject().put("start_ms",start).put("end_ms",end).put("lines",lines);
+ }
  ScheduledExecutorService executor;android.content.SharedPreferences prefs;volatile boolean stopping;
  @Override public void onCreate(){super.onCreate();prefs=getSharedPreferences("som",0);NotificationManager nm=getSystemService(NotificationManager.class);nm.createNotificationChannel(new NotificationChannel("sharing","状态分享",NotificationManager.IMPORTANCE_LOW));
   PendingIntent open=PendingIntent.getActivity(this,0,new Intent(this,MainActivity.class),PendingIntent.FLAG_IMMUTABLE);
@@ -41,8 +53,13 @@ public class Collector extends Service {
       String key=title+"\u0001"+artist+"\u0001"+album+"\u0001"+duration+"/"+prefs.getLong("libraryVersion",0)+"/"+MusicLibrary.hasReadPermission(this);
       if(!key.equals(lyricKey)){embedded=MusicLibrary.find(this,title,artist,album,duration);lyricKey=key;}
       String lyricStatus=embedded.status;
-      if(embedded.lyrics!=null&&"synced".equals(lyricStatus)){String line=Lyrics.current(embedded.lyrics,pos);if(line!=null)music.put("lyric",line);}
-      else if(title.equals(prefs.getString("lyricTitle",""))&&!prefs.getString("lrc","").isEmpty()){String manual=prefs.getString("lrc","");lyricStatus=Lyrics.hasTimeline(manual)?"synced":"plain";String line=Lyrics.current(manual,pos);if(line!=null)music.put("lyric",line);}
+      String source="";
+      if(embedded.lyrics!=null&&"synced".equals(lyricStatus))source=embedded.lyrics;
+      else if(title.equals(prefs.getString("lyricTitle",""))&&!prefs.getString("lrc","").isEmpty()){source=prefs.getString("lrc","");lyricStatus=Lyrics.hasTimeline(source)?"synced":"plain";}
+      if(!source.isEmpty()){String line=Lyrics.current(source,pos);if(line!=null)music.put("lyric",line);music.put("lyric_window",window(source,pos,duration));}
+      String identity=chosen.getPackageName()+"\u0001"+title+"\u0001"+artist+"\u0001"+album+"\u0001"+duration+"\u0001"+m.getString(MediaMetadata.METADATA_KEY_MEDIA_ID);
+      byte[] digest=java.security.MessageDigest.getInstance("SHA-256").digest(identity.getBytes("UTF-8"));StringBuilder hash=new StringBuilder();for(byte b:digest)hash.append(String.format(Locale.ROOT,"%02x",b&255));
+      music.put("track_id",hash.toString()).put("playback_rate",Math.max(0,Math.min(8,p.getPlaybackSpeed())));
       music.put("lyric_status",lyricStatus);prefs.edit().putString("lyricStatus",lyricStatus).apply();e.put("music",music);
      }
     }catch(SecurityException ex){prefs.edit().putString("status","通知访问未授权；只能发送已允许的应用").apply();}

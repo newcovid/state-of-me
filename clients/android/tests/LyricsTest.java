@@ -9,5 +9,7 @@ public class LyricsTest {
   if(!"last".equals(Lyrics.current(lrc,9000)))throw new AssertionError("last line");
   if(Lyrics.current("[999999999999999999999:00]bad",10000)!=null)throw new AssertionError("malformed");
   System.out.println("6 lyric cases passed");
+  java.util.List<Lyrics.Line> lines=Lyrics.parse("[offset:500]\n[00:03]b\n[00:01]a\n[00:03]translation");
+  if(lines.size()!=2||lines.get(0).at!=500||lines.get(1).at!=2500||!lines.get(1).text.equals("translation"))throw new AssertionError("timeline ordering, offset, duplicate");
  }
 }

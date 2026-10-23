@@ -2,18 +2,18 @@
 
 自托管的个人实时状态发布工具。免 Root Android + Windows → 独立 HTTP API → 网页 / AstrBot。
 
-**0.2 开发预览**：当前快照、白名单过滤、设备写入与受众只读凭据分离、45 秒失联过期，公开访问默认关闭。
+**0.3 开发预览**：当前快照、白名单过滤、设备写入与受众只读凭据分离、45 秒失联过期，公开访问默认关闭。
 
 ## 能力
 
 - Android 8+：通知访问授权后读取标准 MediaSession 的歌曲、歌手、播放/暂停及进度；可选 UsageStats 分享白名单前台应用。常驻通知、一键暂停，不读取通知正文，不要求 Root、LSPosed 或词幕。
-- 歌词：授权音乐目录，在本机索引 MP3/FLAC/M4A 的内嵌歌词，按曲名、歌手、专辑与时长严格匹配。同步标签仅发送当前句；纯文本不猜进度。也可手动选择 LRC。不访问 Poweramp 私有数据库。
+- 歌词：授权音乐目录，在本机索引 MP3/FLAC/M4A 的内嵌歌词，按曲名、歌手、专辑与时长严格匹配。同步标签发送当前句及最多 16 行、未来 60 秒的歌词窗口，读者需单独获得窗口权限；纯文本不猜进度。也可手动选择 LRC。不访问 Poweramp 私有数据库。
 - Windows WPF：白名单前台进程，不读取窗口标题；锁屏/空闲 3 分钟隐藏应用；关闭窗口停止。
-- FastAPI + SQLite：按受众投影、重放/乱序保护、隐身和 TTL。网页每 5 秒刷新，令牌仅在页面内存。AstrBot 以真实群事件绑定只读权限和设备主人身份；“我”取实际发送者，“群主”实时查询 QQ 角色，未绑定他人不返回主人状态。
+- FastAPI + SQLite：按受众投影、重放/乱序保护、隐身和 TTL。网页每 5 秒校准，页面内存缓存歌词并连续推进进度，令牌仅在页面内存。AstrBot 以真实群事件绑定只读权限和设备主人身份；“我”取实际发送者，“群主”实时查询 QQ 角色，未绑定他人不返回主人状态。
 
 ## 开始
 
-[安装与测试](docs/QUICKSTART.md) · [开发计划](docs/PLAN.md) · [隐私和限制](docs/PRIVACY.md)
+[安装与测试](docs/QUICKSTART.md) · [开发计划](docs/PLAN.md) · [隐私和限制](docs/PRIVACY.md) · [通用性审查](docs/GENERALITY.md) · [歌词窗口协议](docs/PLAYBACK-API.md)
 
 ```powershell
 python -m pip install -r server/requirements.txt
