@@ -48,7 +48,11 @@ public class MainActivity extends Activity {
   url=edit(box,"服务地址（https://…，无结尾斜杠）","url",false);token=edit(box,"此设备写入令牌","token",true);
   box=sharing;
   Switch telemetry=new Switch(this);telemetry.setText("分享电量与设备状态");telemetry.setTextColor(ink);telemetry.setMinHeight(dp(48));telemetry.setChecked(prefs.getBoolean("device_state",false));telemetry.setOnCheckedChangeListener((v,checked)->prefs.edit().putBoolean("device_state",checked).apply());sharing.addView(telemetry);
-  copy(sharing,"可选分享电量、充电、亮屏、锁屏和省电状态。公开范围由服务端单独控制。",13,muted);
+  copy(sharing,"可选分享电量、电池温度与健康、充电来源、亮屏、锁屏和省电状态。公开范围由服务端单独控制。",13,muted);
+  String[] keys={"app_details","network","audio","resources","collector_health"};
+  String[] labels={"应用详情 · 名称与本次前台时长","网络 · 连接类型与联网验证","声音 · 音量、响铃与可用输出","资源 · 内存、存储与热状态","采集诊断 · 授权与后台限制"};
+  for(int i=0;i<keys.length;i++){final String key=keys[i];Switch option=new Switch(this);option.setText(labels[i]);option.setTextColor(ink);option.setMinHeight(dp(48));option.setChecked(prefs.getBoolean(key,false));option.setOnCheckedChangeListener((v,checked)->prefs.edit().putBoolean(key,checked).apply());sharing.addView(option);}
+  copy(sharing,"以上均可独立关闭。网络不包含名称或地址；声音输出仅代表可用设备。服务器还需允许对应字段，访问者才能读取。",13,muted);
   apps=edit(box,"允许的应用包名，逗号分隔；空表示不分享应用","apps",false);players=edit(box,"允许的播放器包名","players",false);
   if(getIntent().hasExtra("server"))url.setText(getIntent().getStringExtra("server"));
   if(getIntent().hasExtra("device_token"))token.setText(getIntent().getStringExtra("device_token"));

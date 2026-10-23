@@ -1,5 +1,5 @@
 name: state_of_me
 desc: Read authorized personal presence from a standalone State of Me service.
-version: v0.2.0
+version: v0.7.0
 author: State of Me contributors
 repo: https://github.com/newcovid/state-of-me

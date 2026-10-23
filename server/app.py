@@ -13,7 +13,7 @@ from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-app = FastAPI(title="State of Me", version="0.6.0")
+app = FastAPI(title="State of Me", version="0.7.0")
 DB = os.getenv("SOM_DB", "state.db")
 CONFIG = os.getenv("SOM_CONFIG", "config.json")
 WEB = Path(__file__).parent / "web"
@@ -46,6 +46,7 @@ class Music(BaseModel):
     artist: str = Field(default="", max_length=200)
     album: str = Field(default="", max_length=200)
     player: str = Field(default="", max_length=200)
+    playback_status: Literal["unknown", "playing", "paused", "buffering", "connecting", "stopped", "error"] = "unknown"
     playing: bool = False
     position_ms: int = Field(default=0, ge=0, le=604800000)
     duration_ms: int = Field(default=0, ge=0, le=604800000)
@@ -63,6 +64,56 @@ class DeviceState(BaseModel):
     screen_on: bool | None = None
     locked: bool | None = None
     power_save: bool | None = None
+    battery_temperature_c: float | None = Field(default=None, ge=-50, le=100, allow_inf_nan=False)
+    battery_voltage_mv: int | None = Field(default=None, ge=0, le=20000)
+    charge_source: Literal['none', 'ac', 'usb', 'wireless', 'dock', 'unknown'] | None = None
+    battery_health: Literal['good', 'overheat', 'dead', 'over_voltage', 'failure', 'cold', 'unknown'] | None = None
+
+
+class Network(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    connected: bool | None = None
+    validated: bool | None = None
+    metered: bool | None = None
+    transports: list[Literal['wifi', 'cellular', 'ethernet', 'vpn', 'bluetooth', 'other']] = Field(default_factory=list, max_length=6)
+
+
+class Audio(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    music_volume_percent: int | None = Field(default=None, ge=0, le=100)
+    media_muted: bool | None = None
+    ringer_mode: Literal['silent', 'vibrate', 'normal', 'unknown'] | None = None
+    interruption_filter: Literal['all', 'priority', 'none', 'alarms', 'unknown'] | None = None
+    connected_output_types: list[Literal['speaker', 'wired', 'bluetooth', 'usb', 'hdmi', 'other']] = Field(default_factory=list, max_length=6)
+
+
+class Resources(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    available_memory_mib: int | None = Field(default=None, ge=0, le=1073741824)
+    total_memory_mib: int | None = Field(default=None, ge=0, le=1073741824)
+    low_memory: bool | None = None
+    available_storage_mib: int | None = Field(default=None, ge=0, le=1073741824)
+    total_storage_mib: int | None = Field(default=None, ge=0, le=1073741824)
+    thermal_status: int | None = Field(default=None, ge=0, le=6)
+
+
+class CollectorHealth(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    version: str = Field(default='', max_length=32)
+    sdk: int | None = Field(default=None, ge=26, le=1000)
+    notification_access: bool | None = None
+    usage_access: bool | None = None
+    music_directory_access: bool | None = None
+    battery_optimization_exempt: bool | None = None
+
+
+class AppDetails(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    label: str = Field(default='', max_length=120)
+    active_for_ms: int | None = Field(default=None, ge=0, le=3600000)
+
+
+CONTEXT_FIELDS = ('device_state', 'network', 'audio', 'resources', 'collector_health', 'app_details')
 
 
 class Event(BaseModel):
@@ -73,6 +124,11 @@ class Event(BaseModel):
     app: str | None = Field(default=None, max_length=120)
     music: Music | None = None
     device_state: DeviceState | None = None
+    network: Network | None = None
+    audio: Audio | None = None
+    resources: Resources | None = None
+    collector_health: CollectorHealth | None = None
+    app_details: AppDetails | None = None
 
 
 def config():
@@ -129,7 +185,7 @@ async def guard(request: Request, call_next):
 def health():
     with db() as conn:
         conn.execute("SELECT 1")
-    return {"ok": True, "version": "0.6.0"}
+    return {"ok": True, "version": "0.7.0"}
 
 
 @app.post("/v1/events")
@@ -153,8 +209,11 @@ def ingest(event: Event, authorization: str | None = Header(default=None)):
             value["music"]["lyric_status"] = 'unavailable'
         if value['music'] and not rule.get('lyrics', False):
             value['music']['lyric_window'] = None
-    if not rule.get("device_state", False):
-        value["device_state"] = None
+    for field in CONTEXT_FIELDS:
+        if event.hidden or not rule.get(field, False):
+            value[field] = None
+    if not value['app']:
+        value['app_details'] = None
     with db() as conn:
         conn.execute("BEGIN IMMEDIATE")
         old = conn.execute("SELECT seq, received FROM snapshots WHERE device=?", (device,)).fetchone()
@@ -203,9 +262,11 @@ def project(cfg, audience):
             if 'lyric_window' not in fields or 'lyric' not in fields or not device.get('lyrics', False):
                 music['lyric_window'] = None
             item["music"] = music
-        if 'device_state' in fields and device.get('device_state', False) and data.get('device_state'):
-            item['device_state'] = data['device_state']
-        if item.get("app") or item.get("music") or item.get('device_state'):
+        for field in CONTEXT_FIELDS:
+            if field in fields and device.get(field, False) and data.get(field):
+                if field != 'app_details' or item.get('app'):
+                    item[field] = data[field]
+        if any(item.get(field) for field in ('app', 'music', *CONTEXT_FIELDS)):
             result.append(item)
     return {"status": "available" if result else "unavailable", "devices": result, "refresh_seconds": 5, "server_time": now}
 

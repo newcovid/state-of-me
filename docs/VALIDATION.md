@@ -29,3 +29,14 @@
 ## 0.4 验证
 
 Python 13 项合约/适配测试通过；Node 播放测试通过；Java 限流时间测试通过；Android 构建及 v2/v3 签名验证通过。浏览器合成播放下检查桌面和 390px iframe 布局、连接设置和歌词上下文。实际暂停/跳转耗时、多播放器、后台省电与审美满意度需要用户验证。
+
+
+## 0.7 context preview (2026-10-24)
+
+- 20 local Python contract/identity/adapter tests passed; JS playback contracts passed.
+- Android 0.7.0 compiled, signature verified, and installed over 0.6 on the connected phone.
+- Backend health reports 0.7.0; AstrBot startup confirms state_of_me v0.7.0 loaded.
+- Backups were taken before replacing backend/config/plugin; unrelated containers remained running.
+- Public projection configuration is unchanged. New Android category switches default off.
+- Live hardware values and group replies need user testing after reopening/enabling sharing; no QQ messages were sent during verification.
+- See ANDROID-CAPABILITIES.md for category coverage, API limitations and opt-in configuration.

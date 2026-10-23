@@ -45,3 +45,12 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
             r=await self.adapter.get_my_status(e);self.assertEqual(json.loads(r)['subject_qq'],'333333');network.assert_not_called()
             e.bot.api.call_action.side_effect=RuntimeError('offline')
             r=await self.adapter.get_my_status(e);self.assertIn('不能确认',r);network.assert_not_called()
+
+    async def test_context_payload_and_interpretation(self):
+        payload = {'devices': [{'device': 'phone', 'network': {'validated': True},
+                    'audio': {'connected_output_types': ['bluetooth']},
+                    'resources': {'thermal_status': 2}, 'collector_health': {'usage_access': False}}]}
+        with patch('urllib.request.urlopen', return_value=io.BytesIO(json.dumps(payload).encode())):
+            result = await self.adapter.get_my_status(self.event('我的网络怎么样', sender='222222'))
+        self.assertIn('不能证明正在使用耳机', result)
+        self.assertEqual(json.loads(result.split('\n', 1)[1])['devices'], payload['devices'])

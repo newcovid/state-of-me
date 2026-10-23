@@ -18,3 +18,7 @@ class IdentityTests(unittest.TestCase):
         self.assertIsNotNone(self.resolve('他呢')[1])
         self.assertIsNotNone(self.resolve('我和群主在干什么')[1])
         self.assertIsNotNone(self.resolve('我在干什么',mentions=['333333'])[1])
+
+    def test_context_questions(self):
+        for text in ('我的电量多少', '我的网络怎么样', '我的音量多少', '我的存储还剩多少', '我的采集权限开了吗'):
+            self.assertEqual(self.resolve(text)[0], '111111')

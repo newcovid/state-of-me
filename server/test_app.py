@@ -25,6 +25,45 @@ class ContractTests(unittest.TestCase):
     def send(self, seq=1, **kw):
         return self.client.post('/v1/events',headers=self.wh,json={'seq':seq,'observed_at':time.time(),**kw})
 
+    def test_context_categories_scopes_retraction_and_hidden(self):
+        payload = {'network': {'connected': True, 'transports': ['wifi']},
+                   'audio': {'ringer_mode': 'silent'}, 'resources': {'thermal_status': 2},
+                   'collector_health': {'version': '0.7.0', 'usage_access': False},
+                   'app_details': {'label': 'Editor', 'active_for_ms': 1000}}
+        for field in payload:
+            self.cfg['devices']['phone'][field] = True
+        self.cfg['readers']['viewer']['fields'] += list(payload)
+        self.cfg['public'] = {'enabled': True, 'devices': ['phone'], 'fields': ['music', 'lyric']}
+        Path(m.CONFIG).write_text(json.dumps(self.cfg))
+        self.assertEqual(self.send(app='editor', **payload).status_code, 200)
+        item = self.client.get('/v1/status', headers=self.rh).json()['devices'][0]
+        for field in payload:
+            self.assertIn(field, item)
+        self.assertEqual(self.client.get('/v1/public/status').json()['devices'], [])
+        self.cfg['devices']['phone']['network'] = False
+        self.cfg['devices']['phone']['apps'] = []
+        self.cfg['readers']['viewer']['fields'].remove('audio')
+        Path(m.CONFIG).write_text(json.dumps(self.cfg))
+        item = self.client.get('/v1/status', headers=self.rh).json()['devices'][0]
+        for field in ('network', 'audio', 'app_details'):
+            self.assertNotIn(field, item)
+        self.assertEqual(self.send(2, hidden=True, **payload).status_code, 200)
+        self.assertEqual(self.client.get('/v1/status', headers=self.rh).json()['devices'], [])
+        with m.db() as conn:
+            stored = json.loads(conn.execute('SELECT payload FROM snapshots').fetchone()[0])
+        for field in payload:
+            self.assertIsNone(stored[field])
+
+    def test_context_default_denial_and_validation(self):
+        self.assertEqual(self.send(network={'transports': ['secret-ssid']}).status_code, 422)
+        self.assertEqual(self.send(resources={'thermal_status': 7}).status_code, 422)
+        self.assertEqual(self.send(device_state={'battery_temperature_c': 101}).status_code, 422)
+        self.assertEqual(self.send(network={'connected': True}, app_details={'label': 'Secret'}).status_code, 200)
+        with m.db() as conn:
+            stored = json.loads(conn.execute('SELECT payload FROM snapshots').fetchone()[0])
+        self.assertIsNone(stored['network'])
+        self.assertIsNone(stored['app_details'])
+
     def test_scope_replay_and_clear(self):
         self.assertEqual(self.client.get('/v1/status',headers=self.wh).status_code,401)
         self.assertEqual(self.client.post('/v1/events',headers=self.rh,json={'seq':1,'observed_at':time.time()}).status_code,401)
