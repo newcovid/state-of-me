@@ -55,6 +55,16 @@ class ContractTests(unittest.TestCase):
         self.assertEqual(self.send(observed_at_bad=1).status_code,422)
         self.assertEqual(self.client.post('/v1/events',headers=self.wh,json={'seq':1,'observed_at':0}).status_code,422)
 
+    def test_public_music_does_not_expose_private_fields(self):
+        self.cfg['public']={'enabled':True,'devices':['phone'],'fields':['music']}
+        Path(m.CONFIG).write_text(json.dumps(self.cfg))
+        self.send(app='editor',music={'title':'Sample','player':'player','lyric':'private line',
+            'lyric_window':{'start_ms':0,'end_ms':10000,'lines':[{'at_ms':0,'text':'private line'}]}})
+        item=self.client.get('/v1/public/status').json()['devices'][0]
+        self.assertNotIn('app',item)
+        self.assertIsNone(item['music']['lyric'])
+        self.assertIsNone(item['music']['lyric_window'])
+
     def test_window_projection_and_revocation(self):
         self.cfg['readers']['viewer']['fields'] += ['lyric', 'lyric_window']
         Path(m.CONFIG).write_text(json.dumps(self.cfg))

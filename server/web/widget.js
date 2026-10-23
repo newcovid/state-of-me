@@ -1,0 +1,10 @@
+/* Embeddable public presence: no tokens, cookies, application activity or private API. */
+(()=>{
+ if(customElements.get('state-of-me-status'))return;
+ class Presence extends HTMLElement{
+  connectedCallback(){if(this.timer)return;if(!this.root)this.root=this.attachShadow({mode:'open'});this.root.innerHTML=`<style>:host{display:block;font:14px/1.5 system-ui;color:inherit}section{padding:14px 18px;border:1px solid #8899aa55;border-radius:14px;background:var(--som-background,Canvas);color:var(--som-color,CanvasText);max-width:420px;margin:20px auto;box-sizing:border-box}header{font-size:12px;opacity:.7;margin-bottom:4px}p{margin:0;overflow-wrap:anywhere}small{font-size:11px;opacity:.65} @media(prefers-color-scheme:dark){section{color-scheme:dark}}</style><section aria-label="公开音乐状态"><header>此刻在听</header><p>暂无公开音乐状态</p><small>由设备主动分享</small></section>`;this.line=this.root.querySelector('p');this.update();this.timer=setInterval(()=>this.update(),5000);}
+  disconnectedCallback(){clearInterval(this.timer);clearTimeout(this.expiry);this.abort?.abort();this.timer=null;}
+  async update(){if(this.busy)return;this.busy=true;this.abort=new AbortController();const timeout=setTimeout(()=>this.abort.abort(),8000);try{const url=new URL(this.getAttribute('endpoint')||'/presence/v1/public/status',location.href);if(url.origin!==location.origin)throw Error('same-origin required');const r=await fetch(url,{credentials:'omit',cache:'no-store',signal:this.abort.signal});if(!r.ok)throw Error('unavailable');const d=await r.json();const device=d.devices?.find(x=>x.music);clearTimeout(this.expiry);if(!device){this.line.textContent='暂无公开音乐状态';return;}const m=device.music;this.line.textContent=(m.playing?'正在播放：':'已暂停：')+m.title+(m.artist?' / '+m.artist:'');this.expiry=setTimeout(()=>{this.line.textContent='暂无公开音乐状态';},Math.max(0,device.expires_in)*1000);}catch(e){this.line.textContent='暂无公开音乐状态';clearTimeout(this.expiry);}finally{clearTimeout(timeout);this.busy=false;}}
+ }
+ customElements.define('state-of-me-status',Presence);
+})();

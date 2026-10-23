@@ -2,7 +2,7 @@
 
 自托管的个人实时状态发布工具。免 Root Android + Windows → 独立 HTTP API → 网页 / AstrBot。
 
-**0.4 开发预览**：当前快照、白名单过滤、设备写入与受众只读凭据分离、45 秒失联过期，公开访问默认关闭。
+**0.5 开发预览**：当前快照、白名单过滤、设备写入与受众只读凭据分离、45 秒失联过期，公开访问默认关闭。
 
 ## 能力
 
@@ -13,7 +13,7 @@
 
 ## 开始
 
-[安装与测试](docs/QUICKSTART.md) · [开发计划](docs/PLAN-0.4.md) · [隐私和限制](docs/PRIVACY.md) · [通用性审查](docs/GENERALITY.md) · [歌词窗口协议](docs/PLAYBACK-API.md)
+[安装与测试](docs/QUICKSTART.md) · [开发计划](docs/PLAN-0.5.md) · [隐私和限制](docs/PRIVACY.md) · [通用性审查](docs/GENERALITY.md) · [歌词窗口协议](docs/PLAYBACK-API.md)
 
 ```powershell
 python -m pip install -r server/requirements.txt
@@ -29,3 +29,5 @@ Android 使用无外部库的原生 Java，JDK/Android SDK 可直接构建，不
 API：`POST /v1/events`、`GET /v1/status`、默认关闭的 `GET /v1/public/status`。机器人和博客都是适配器；机器人停机不影响采集和网页。
 
 MIT License。贡献请附复现步骤和设备版本，不提交令牌、聊天记录、真实活动或私有配置。
+
+Halo 常驻公开组件：[接入说明](integrations/halo/README.md)。Android 设置按状态、连接、分享、歌词分区，支持系统深浅色。
