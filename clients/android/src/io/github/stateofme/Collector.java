@@ -54,6 +54,12 @@ public class Collector extends Service {
    boolean hidden=forceHidden||!prefs.getBoolean("enabled",false);JSONObject e=new JSONObject();long now=System.currentTimeMillis();long seq=Math.max(now,prefs.getLong("seq",0)+1);prefs.edit().putLong("seq",seq).commit();e.put("seq",seq).put("observed_at",now/1000.0).put("hidden",hidden);
    if(!hidden){
     PowerManager power=getSystemService(PowerManager.class);KeyguardManager keyguard=getSystemService(KeyguardManager.class);
+    if(prefs.getBoolean("device_state",false)){
+     JSONObject deviceState=new JSONObject().put("screen_on",power.isInteractive()).put("locked",keyguard.isKeyguardLocked()).put("power_save",power.isPowerSaveMode());
+     Intent battery=registerReceiver(null,new IntentFilter(Intent.ACTION_BATTERY_CHANGED));
+     if(battery!=null){int level=battery.getIntExtra(BatteryManager.EXTRA_LEVEL,-1),scale=battery.getIntExtra(BatteryManager.EXTRA_SCALE,-1);if(level>=0&&scale>0)deviceState.put("battery_percent",Math.max(0,Math.min(100,Math.round(100f*level/scale))));int charging=battery.getIntExtra(BatteryManager.EXTRA_STATUS,-1);deviceState.put("charging",charging==BatteryManager.BATTERY_STATUS_CHARGING||charging==BatteryManager.BATTERY_STATUS_FULL);}
+     e.put("device_state",deviceState);
+    }
     if(power.isInteractive()&&!keyguard.isKeyguardLocked()){
      UsageEvents events=getSystemService(UsageStatsManager.class).queryEvents(now-3600000,now);UsageEvents.Event event=new UsageEvents.Event();String last="";
      while(events.hasNextEvent()){events.getNextEvent(event);if(event.getEventType()==UsageEvents.Event.ACTIVITY_RESUMED)last=event.getPackageName();else if(event.getEventType()==UsageEvents.Event.ACTIVITY_PAUSED&&event.getPackageName().equals(last))last="";}
@@ -68,6 +74,7 @@ public class Collector extends Service {
       String artist=trim(m.getString(MediaMetadata.METADATA_KEY_ARTIST),200),album=trim(m.getString(MediaMetadata.METADATA_KEY_ALBUM),200);
       String key=title+"\u0001"+artist+"\u0001"+album+"\u0001"+duration+"/"+prefs.getLong("libraryVersion",0)+"/"+MusicLibrary.hasReadPermission(this);
       if(!key.equals(lyricKey)){embedded=MusicLibrary.find(this,title,artist,album,duration);lyricKey=key;}
+      music.put("album",album);
       String lyricStatus=embedded.status;
       String source="";
       if(embedded.lyrics!=null&&"synced".equals(lyricStatus))source=embedded.lyrics;

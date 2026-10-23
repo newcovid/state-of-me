@@ -55,6 +55,29 @@ class ContractTests(unittest.TestCase):
         self.assertEqual(self.send(observed_at_bad=1).status_code,422)
         self.assertEqual(self.client.post('/v1/events',headers=self.wh,json={'seq':1,'observed_at':0}).status_code,422)
 
+    def test_device_state_scope_and_retraction(self):
+        self.cfg['devices']['phone']['device_state']=True
+        self.cfg['readers']['viewer']['fields'].append('device_state')
+        self.cfg['public']={'enabled':True,'devices':['phone'],'fields':['music','lyric','lyric_window']}
+        Path(m.CONFIG).write_text(json.dumps(self.cfg))
+        self.assertEqual(self.send(device_state={'battery_percent':101}).status_code,422)
+        self.assertEqual(self.send(device_state={'battery_percent':72,'locked':True,'charging':False}).status_code,200)
+        data=self.client.get('/v1/status',headers=self.rh).json()['devices'][0]
+        self.assertEqual(data['device_state']['battery_percent'],72)
+        self.assertEqual(self.client.get('/v1/public/status').json()['devices'],[])
+        self.cfg['devices']['phone']['device_state']=False
+        Path(m.CONFIG).write_text(json.dumps(self.cfg))
+        self.assertEqual(self.client.get('/v1/status',headers=self.rh).json()['devices'],[])
+
+    def test_hidden_device_state_cleared(self):
+        self.cfg['devices']['phone']['device_state']=True
+        self.cfg['readers']['viewer']['fields'].append('device_state')
+        Path(m.CONFIG).write_text(json.dumps(self.cfg))
+        self.send(hidden=True,device_state={'battery_percent':50})
+        with m.db() as c:
+            payload=json.loads(c.execute('SELECT payload FROM snapshots').fetchone()[0])
+        self.assertIsNone(payload['device_state'])
+
     def test_public_music_does_not_expose_private_fields(self):
         self.cfg['public']={'enabled':True,'devices':['phone'],'fields':['music']}
         Path(m.CONFIG).write_text(json.dumps(self.cfg))

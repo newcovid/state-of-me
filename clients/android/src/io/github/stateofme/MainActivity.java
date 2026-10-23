@@ -26,7 +26,14 @@ public class MainActivity extends Activity {
  @Override public void onCreate(Bundle b){super.onCreate(b);prefs=getSharedPreferences("som",0);
   if((getResources().getConfiguration().uiMode&android.content.res.Configuration.UI_MODE_NIGHT_MASK)==android.content.res.Configuration.UI_MODE_NIGHT_YES){ink=0xffe4edf5;muted=0xffb3c6d7;background=0xff142331;surface=0xff203444;accent=0xffa6cef0;}
   ScrollView scroll=new ScrollView(this);scroll.setFillViewport(true);scroll.setBackgroundColor(background);LinearLayout root=new LinearLayout(this);root.setOrientation(1);root.setPadding(dp(20),dp(24),dp(20),dp(28));scroll.addView(root);setContentView(scroll);
-  scroll.setOnApplyWindowInsetsListener((v,insets)->{v.setPadding(0,insets.getSystemWindowInsetTop(),0,insets.getSystemWindowInsetBottom());return insets;});
+  if(Build.VERSION.SDK_INT>=30)getWindow().setDecorFitsSystemWindows(false);
+  scroll.setClipToPadding(false);
+  scroll.setOnApplyWindowInsetsListener((v,insets)->{
+   int top=insets.getSystemWindowInsetTop(),bottom=insets.getSystemWindowInsetBottom();
+   if(Build.VERSION.SDK_INT>=30){android.graphics.Insets bars=insets.getInsets(android.view.WindowInsets.Type.systemBars()|android.view.WindowInsets.Type.displayCutout());top=bars.top;bottom=Math.max(bars.bottom,insets.getInsets(android.view.WindowInsets.Type.ime()).bottom);}
+   v.setPadding(0,top,0,bottom);
+   v.post(()->{android.view.View focused=getCurrentFocus();if(focused instanceof EditText)focused.requestRectangleOnScreen(new android.graphics.Rect(0,0,focused.getWidth(),focused.getHeight()+dp(24)),false);});return insets;
+  });
   if(background==0xffeaf0f5)getWindow().getDecorView().setSystemUiVisibility(android.view.View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR);
   copy(root,"State of Me",28,ink);copy(root,"分享你选择的此刻",14,muted);
   LinearLayout navigation=new LinearLayout(this);root.addView(navigation);String[] names={"状态","连接","分享","歌词"};
@@ -40,6 +47,8 @@ public class MainActivity extends Activity {
   LinearLayout box=connection;
   url=edit(box,"服务地址（https://…，无结尾斜杠）","url",false);token=edit(box,"此设备写入令牌","token",true);
   box=sharing;
+  Switch telemetry=new Switch(this);telemetry.setText("分享电量与设备状态");telemetry.setTextColor(ink);telemetry.setMinHeight(dp(48));telemetry.setChecked(prefs.getBoolean("device_state",false));telemetry.setOnCheckedChangeListener((v,checked)->prefs.edit().putBoolean("device_state",checked).apply());sharing.addView(telemetry);
+  copy(sharing,"可选分享电量、充电、亮屏、锁屏和省电状态。公开范围由服务端单独控制。",13,muted);
   apps=edit(box,"允许的应用包名，逗号分隔；空表示不分享应用","apps",false);players=edit(box,"允许的播放器包名","players",false);
   if(getIntent().hasExtra("server"))url.setText(getIntent().getStringExtra("server"));
   if(getIntent().hasExtra("device_token"))token.setText(getIntent().getStringExtra("device_token"));
@@ -56,7 +65,7 @@ public class MainActivity extends Activity {
   button(box,"清除歌词授权",()->prefs.edit().remove("lrc").remove("lyricTitle").apply());
   select(0);
  }
- EditText edit(LinearLayout box,String label,String key,boolean secret){TextView l=copy(box,label,14,muted);EditText e=new EditText(this);e.setId(android.view.View.generateViewId());l.setLabelFor(e.getId());e.setSingleLine(true);e.setTextSize(16);e.setTextColor(ink);e.setHintTextColor(muted);e.setMinHeight(dp(52));e.setPadding(dp(12),dp(8),dp(12),dp(8));e.setBackground(shape(background,10));e.setText(prefs.getString(key,""));if(secret)e.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_VARIATION_PASSWORD);else e.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2);lp.bottomMargin=dp(12);box.addView(e,lp);return e;}
+ EditText edit(LinearLayout box,String label,String key,boolean secret){TextView l=copy(box,label,14,muted);EditText e=new EditText(this);e.setId(android.view.View.generateViewId());l.setLabelFor(e.getId());e.setSingleLine(true);e.setImeOptions(android.view.inputmethod.EditorInfo.IME_ACTION_NEXT|android.view.inputmethod.EditorInfo.IME_FLAG_NO_EXTRACT_UI);e.setTextSize(16);e.setTextColor(ink);e.setHintTextColor(muted);e.setMinHeight(dp(52));e.setPadding(dp(12),dp(8),dp(12),dp(8));e.setBackground(shape(background,10));e.setText(prefs.getString(key,""));if(key.equals("url"))e.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_VARIATION_URI);else if(secret)e.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_VARIATION_PASSWORD);else e.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2);lp.bottomMargin=dp(12);box.addView(e,lp);return e;}
  void button(LinearLayout box,String label,Runnable r){Button b=new Button(this);b.setText(label);b.setAllCaps(false);b.setTextSize(14);b.setMinHeight(dp(48));b.setTextColor(ink);b.setBackground(new android.graphics.drawable.RippleDrawable(android.content.res.ColorStateList.valueOf(0x3349647d),shape(background,10),null));b.setPadding(dp(12),dp(10),dp(12),dp(10));LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2);lp.topMargin=dp(12);b.setOnClickListener(v->r.run());box.addView(b,lp);}
  void toast(String s){Toast.makeText(this,s,Toast.LENGTH_LONG).show();}
  @Override protected void onResume(){super.onResume();handler.post(refresh);}

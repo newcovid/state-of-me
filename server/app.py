@@ -13,7 +13,7 @@ from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-app = FastAPI(title="State of Me", version="0.5.0")
+app = FastAPI(title="State of Me", version="0.6.0")
 DB = os.getenv("SOM_DB", "state.db")
 CONFIG = os.getenv("SOM_CONFIG", "config.json")
 WEB = Path(__file__).parent / "web"
@@ -44,6 +44,7 @@ class Music(BaseModel):
     model_config = ConfigDict(extra="forbid")
     title: str = Field(max_length=200)
     artist: str = Field(default="", max_length=200)
+    album: str = Field(default="", max_length=200)
     player: str = Field(default="", max_length=200)
     playing: bool = False
     position_ms: int = Field(default=0, ge=0, le=604800000)
@@ -55,6 +56,15 @@ class Music(BaseModel):
     lyric_status: Literal['unavailable', 'synced', 'plain', 'ambiguous', 'unmatched', 'permission_required', 'unsupported'] = 'unavailable'
 
 
+class DeviceState(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    battery_percent: int | None = Field(default=None, ge=0, le=100)
+    charging: bool | None = None
+    screen_on: bool | None = None
+    locked: bool | None = None
+    power_save: bool | None = None
+
+
 class Event(BaseModel):
     model_config = ConfigDict(extra="forbid")
     seq: int = Field(ge=0)
@@ -62,6 +72,7 @@ class Event(BaseModel):
     hidden: bool = False
     app: str | None = Field(default=None, max_length=120)
     music: Music | None = None
+    device_state: DeviceState | None = None
 
 
 def config():
@@ -118,7 +129,7 @@ async def guard(request: Request, call_next):
 def health():
     with db() as conn:
         conn.execute("SELECT 1")
-    return {"ok": True, "version": "0.5.0"}
+    return {"ok": True, "version": "0.6.0"}
 
 
 @app.post("/v1/events")
@@ -131,7 +142,7 @@ def ingest(event: Event, authorization: str | None = Header(default=None)):
     value = event.model_dump()
     # Defense in depth: server allowlists also protect against a broken collector.
     if event.hidden:
-        value.update(app=None, music=None)
+        value.update(app=None, music=None, device_state=None)
     else:
         if event.app not in rule.get("apps", []):
             value["app"] = None
@@ -142,6 +153,8 @@ def ingest(event: Event, authorization: str | None = Header(default=None)):
             value["music"]["lyric_status"] = 'unavailable'
         if value['music'] and not rule.get('lyrics', False):
             value['music']['lyric_window'] = None
+    if not rule.get("device_state", False):
+        value["device_state"] = None
     with db() as conn:
         conn.execute("BEGIN IMMEDIATE")
         old = conn.execute("SELECT seq, received FROM snapshots WHERE device=?", (device,)).fetchone()
@@ -190,7 +203,9 @@ def project(cfg, audience):
             if 'lyric_window' not in fields or 'lyric' not in fields or not device.get('lyrics', False):
                 music['lyric_window'] = None
             item["music"] = music
-        if item.get("app") or item.get("music"):
+        if 'device_state' in fields and device.get('device_state', False) and data.get('device_state'):
+            item['device_state'] = data['device_state']
+        if item.get("app") or item.get("music") or item.get('device_state'):
             result.append(item)
     return {"status": "available" if result else "unavailable", "devices": result, "refresh_seconds": 5, "server_time": now}
 
