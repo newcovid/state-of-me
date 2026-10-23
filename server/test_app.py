@@ -75,11 +75,39 @@ class ContractTests(unittest.TestCase):
         rule = self.cfg['devices']['phone']
         rule.update(apps_mode='blacklist', players_mode='blacklist', apps_blocked=['secret'], players_blocked=['secret'])
         Path(m.CONFIG).write_text(json.dumps(self.cfg))
-        self.assertEqual(self.send(app='new-app',music={'title':'Song','player':'new-player'}).status_code,200)
+        self.assertEqual(self.send(app='new-app',music={'title':'Song','player':'new-player','playing':True}).status_code,200)
         self.assertEqual(self.client.get('/v1/status',headers=self.rh).json()['devices'][0]['app'],'new-app')
         rule.update(apps_blocked=['new-app'], players_blocked=['new-player'])
         Path(m.CONFIG).write_text(json.dumps(self.cfg))
         self.assertEqual(self.client.get('/v1/status',headers=self.rh).json()['devices'],[])
+
+    def test_pause_repeated_heartbeat_and_resume(self):
+        self.cfg['public']={'enabled':True,'devices':['phone'],'fields':['music']}
+        Path(m.CONFIG).write_text(json.dumps(self.cfg))
+        for seq,playing in enumerate((True,False,False,True),1):
+            with m.db() as conn:
+                conn.execute('UPDATE snapshots SET received=?',(time.time()-2,))
+            self.assertEqual(self.send(seq,music={'title':'Song','player':'player','playing':playing,
+                'playback_status':'playing' if playing else 'paused'}).status_code,200)
+            for path,headers in (('/v1/status',self.rh),('/v1/public/status',{})):
+                devices=self.client.get(path,headers=headers).json()['devices']
+                self.assertEqual(bool(devices),playing)
+
+    def test_old_paused_snapshot_is_retracted_without_new_upload(self):
+        self.send(app='editor')
+        with m.db() as conn:
+            old={'hidden':False,'app':'editor','music':{'title':'Old','player':'player',
+                 'playing':False,'position_ms':100,'duration_ms':1000}}
+            conn.execute('UPDATE snapshots SET payload=?',(json.dumps(old),))
+        device=self.client.get('/v1/status',headers=self.rh).json()['devices'][0]
+        self.assertEqual(device['app'],'editor')
+        self.assertNotIn('music',device)
+
+    def test_explicit_nonplaying_states_override_playing_flag(self):
+        for state in ('paused','stopped','buffering','connecting','error'):
+            self.assertFalse(m.active_music({'playing':True,'playback_status':state}))
+        self.assertTrue(m.active_music({'playing':True}))
+        self.assertFalse(m.active_music({'playing':False}))
 
     def test_scope_replay_and_clear(self):
         self.assertEqual(self.client.get('/v1/status',headers=self.wh).status_code,401)
@@ -91,7 +119,7 @@ class ContractTests(unittest.TestCase):
         self.assertEqual(self.client.get('/v1/status',headers=self.rh).json()['devices'],[])
 
     def test_filters_and_lyrics_audience(self):
-        self.send(app='secret',music={'title':'Song','player':'player','lyric':'private line'})
+        self.send(app='secret',music={'title':'Song','player':'player','playing':True,'lyric':'private line'})
         d=self.client.get('/v1/status',headers=self.rh).json()['devices'][0]
         self.assertNotIn('app',d)
         self.assertIsNone(d['music']['lyric'])
@@ -137,7 +165,7 @@ class ContractTests(unittest.TestCase):
     def test_public_music_does_not_expose_private_fields(self):
         self.cfg['public']={'enabled':True,'devices':['phone'],'fields':['music']}
         Path(m.CONFIG).write_text(json.dumps(self.cfg))
-        self.send(app='editor',music={'title':'Sample','player':'player','lyric':'private line',
+        self.send(app='editor',music={'title':'Sample','player':'player','playing':True,'lyric':'private line',
             'lyric_window':{'start_ms':0,'end_ms':10000,'lines':[{'at_ms':0,'text':'private line'}]}})
         item=self.client.get('/v1/public/status').json()['devices'][0]
         self.assertNotIn('app',item)
@@ -164,14 +192,14 @@ class ContractTests(unittest.TestCase):
         self.assertIsNone(read()['lyric'])
         self.assertIsNone(read()['lyric_window'])
 
-    def test_window_validation_and_paused_clock(self):
+    def test_window_validation_and_paused_suppression(self):
         base={'title':'Song','player':'player','position_ms':500,'playing':False}
         bad={'start_ms':1000,'end_ms':500,'lines':[]}
         self.assertEqual(self.send(music={**base,'lyric_window':bad}).status_code,422)
         self.assertEqual(self.send(music={**base,'playback_rate':9}).status_code,422)
         self.assertEqual(self.send(music=base).status_code,200)
         with m.db() as c:c.execute('UPDATE snapshots SET received=?',(time.time()-3,))
-        self.assertEqual(self.client.get('/v1/status',headers=self.rh).json()['devices'][0]['music']['position_ms'],500)
+        self.assertEqual(self.client.get('/v1/status',headers=self.rh).json()['devices'],[])
 
 
 if __name__ == '__main__':unittest.main()

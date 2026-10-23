@@ -67,3 +67,24 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
         with patch('urllib.request.urlopen', side_effect=OSError('offline')):
             result = await self.adapter.get_my_status(self.event('我的网络怎么样', sender='222222'))
         self.assertIn('状态服务暂时连接不上', result)
+
+    def test_general_question_omits_stale_music_and_diagnostics(self):
+        payload={'devices':[{'device':'phone','app':'editor','app_details':{'label':'Editor'},
+                 'music':{'title':'Old song','playing':False},'device_state':{'charging':True},
+                 'network':{'validated':True},'audio':{'media_muted':False}}]}
+        result=self.m.select_signals(payload,'群主在干什么')
+        self.assertEqual(set(result['devices'][0]),{'device','app','app_details'})
+        self.assertIn('music',payload['devices'][0])  # No mutation of source.
+
+    def test_general_question_keeps_meaningful_state_not_negative_inventory(self):
+        payload={'devices':[{'device':'phone','device_state':{'locked':True,'charging':False,'battery_percent':80}}]}
+        result=self.m.select_signals(payload,'群主现在什么状态')
+        self.assertEqual(result['devices'][0]['device_state'],{'locked':True})
+        payload['devices'][0]['device_state']={'locked':False,'charging':False}
+        self.assertEqual(self.m.select_signals(payload,'群主在干嘛')['devices'],[])
+
+    async def test_general_empty_reply_does_not_offer_technical_checklist(self):
+        with patch('urllib.request.urlopen',return_value=io.BytesIO(b'{"devices":[]}')):
+            result=await self.adapter.get_my_status(self.event('我在干什么',sender='222222'))
+        self.assertIn('暂时看不出具体在忙什么',json.loads(result)['detail'])
+        self.assertNotIn('检查 App',result)

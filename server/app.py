@@ -13,7 +13,7 @@ from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-app = FastAPI(title="State of Me", version="0.8.0")
+app = FastAPI(title="State of Me", version="0.8.1")
 DB = os.getenv("SOM_DB", "state.db")
 CONFIG = os.getenv("SOM_CONFIG", "config.json")
 WEB = Path(__file__).parent / "web"
@@ -131,6 +131,12 @@ class Event(BaseModel):
     app_details: AppDetails | None = None
 
 
+def active_music(music):
+    # Legacy clients omit playback_status; an explicit non-playing state wins.
+    return bool(music and music.get('playing') is True and
+                music.get('playback_status', 'unknown') in ('playing', 'unknown'))
+
+
 def permitted(rule, category, package):
     if not package:
         return False
@@ -194,7 +200,7 @@ async def guard(request: Request, call_next):
 def health():
     with db() as conn:
         conn.execute("SELECT 1")
-    return {"ok": True, "version": "0.8.0"}
+    return {"ok": True, "version": "0.8.1"}
 
 
 @app.post("/v1/events")
@@ -218,6 +224,8 @@ def ingest(event: Event, authorization: str | None = Header(default=None)):
             value["music"]["lyric_status"] = 'unavailable'
         if value['music'] and not rule.get('lyrics', False):
             value['music']['lyric_window'] = None
+    if not active_music(value.get('music')):
+        value['music'] = None
     for field in CONTEXT_FIELDS:
         if event.hidden or not rule.get(field, False):
             value[field] = None
@@ -253,7 +261,7 @@ def project(cfg, audience):
         if "app" in fields and permitted(device, "apps", data["app"]):
             item["app"] = data["app"]
         music = data.get("music")
-        if "music" in fields and music and permitted(device, "players", music["player"]):
+        if "music" in fields and active_music(music) and permitted(device, "players", music["player"]):
             music = dict(music)
             # Reception time anchors progress without depending on device wall clocks.
             position = music['position_ms'] + (max(0, now-received)*1000*music.get('playback_rate', 1) if music['playing'] else 0)

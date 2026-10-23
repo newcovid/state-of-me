@@ -45,3 +45,8 @@ Python 13 项合约/适配测试通过；Node 播放测试通过；Java 限流�
 ## 0.8 UX preview (2026-10-24)
 
 23 Python tests, Java AppFilter cases, JS playback checks, signed Android build. Installed final APK on the connected phone; inspected home/sharing/lyrics/picker screenshots. Backend health 0.8.0 and adapter redeployed with backup. Scope/filter and UX acceptance boundaries are documented in UX-0.8.md. Private app-list screenshots are not published. No actual group message was sent.
+
+
+## 0.8.1 current-activity fix
+
+29 Python tests and JS playback checks pass; APK compiled, signed and installed. Backend health and AstrBot plugin load report 0.8.1. No group test messages were sent. Current-activity semantics and timing limits are in PLAYBACK-API.md.
