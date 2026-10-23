@@ -46,7 +46,7 @@ public final class MusicLibrary {
   generation++;
   android.content.SharedPreferences p=c.getSharedPreferences("som",0);String tree=p.getString("tree","");
   for(UriPermission grant:c.getContentResolver().getPersistedUriPermissions())try{c.getContentResolver().releasePersistableUriPermission(grant.getUri(),Intent.FLAG_GRANT_READ_URI_PERMISSION);}catch(Exception ignored){}
-  p.edit().remove("tree").putLong("libraryVersion",System.currentTimeMillis()).putString("libraryStatus","音乐目录授权已清除").apply();new File(c.getFilesDir(),INDEX).delete();
+  p.edit().remove("tree").remove("lyricStatus").putLong("libraryVersion",System.currentTimeMillis()).putString("libraryStatus","音乐目录授权已清除").apply();new File(c.getFilesDir(),INDEX).delete();
  }
  public static class Result {public String status="unavailable",lyrics=null;}
  public static boolean hasReadPermission(Context c){

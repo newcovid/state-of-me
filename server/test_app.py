@@ -64,6 +64,23 @@ class ContractTests(unittest.TestCase):
         self.assertIsNone(stored['network'])
         self.assertIsNone(stored['app_details'])
 
+    def test_filter_modes_and_live_retraction(self):
+        for category in ('apps', 'players'):
+            self.assertFalse(m.permitted({}, category, 'app'))
+            self.assertTrue(m.permitted({category: ['app']}, category, 'app'))
+            self.assertFalse(m.permitted({category+'_mode': 'off', category: ['app']}, category, 'app'))
+            self.assertFalse(m.permitted({category+'_mode': 'invalid'}, category, 'app'))
+            self.assertTrue(m.permitted({category+'_mode': 'blacklist'}, category, 'app'))
+            self.assertFalse(m.permitted({category+'_mode': 'blacklist',category+'_blocked': ['app']}, category, 'app'))
+        rule = self.cfg['devices']['phone']
+        rule.update(apps_mode='blacklist', players_mode='blacklist', apps_blocked=['secret'], players_blocked=['secret'])
+        Path(m.CONFIG).write_text(json.dumps(self.cfg))
+        self.assertEqual(self.send(app='new-app',music={'title':'Song','player':'new-player'}).status_code,200)
+        self.assertEqual(self.client.get('/v1/status',headers=self.rh).json()['devices'][0]['app'],'new-app')
+        rule.update(apps_blocked=['new-app'], players_blocked=['new-player'])
+        Path(m.CONFIG).write_text(json.dumps(self.cfg))
+        self.assertEqual(self.client.get('/v1/status',headers=self.rh).json()['devices'],[])
+
     def test_scope_replay_and_clear(self):
         self.assertEqual(self.client.get('/v1/status',headers=self.wh).status_code,401)
         self.assertEqual(self.client.post('/v1/events',headers=self.rh,json={'seq':1,'observed_at':time.time()}).status_code,401)

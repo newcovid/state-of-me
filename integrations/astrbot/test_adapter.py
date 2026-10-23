@@ -54,3 +54,16 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
             result = await self.adapter.get_my_status(self.event('我的网络怎么样', sender='222222'))
         self.assertIn('不能证明正在使用耳机', result)
         self.assertEqual(json.loads(result.split('\n', 1)[1])['devices'], payload['devices'])
+
+    async def test_empty_snapshot_has_actionable_guidance(self):
+        with patch('urllib.request.urlopen', return_value=io.BytesIO(b'{"devices":[]}')):
+            result = await self.adapter.get_my_status(self.event('我的网络怎么样', sender='222222'))
+        data = json.loads(result)
+        self.assertEqual(data['subject_qq'], '222222')
+        self.assertIn('最近是否同步成功', data['detail'])
+        self.assertIn('不能据此判断本人离线', data['detail'])
+
+    async def test_transport_failure_is_not_identity_failure(self):
+        with patch('urllib.request.urlopen', side_effect=OSError('offline')):
+            result = await self.adapter.get_my_status(self.event('我的网络怎么样', sender='222222'))
+        self.assertIn('状态服务暂时连接不上', result)

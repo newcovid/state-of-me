@@ -13,7 +13,7 @@ from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-app = FastAPI(title="State of Me", version="0.7.0")
+app = FastAPI(title="State of Me", version="0.8.0")
 DB = os.getenv("SOM_DB", "state.db")
 CONFIG = os.getenv("SOM_CONFIG", "config.json")
 WEB = Path(__file__).parent / "web"
@@ -131,6 +131,15 @@ class Event(BaseModel):
     app_details: AppDetails | None = None
 
 
+def permitted(rule, category, package):
+    if not package:
+        return False
+    mode = rule.get(category + '_mode', 'whitelist')
+    if mode == 'blacklist':
+        return package not in rule.get(category + '_blocked', [])
+    return mode == 'whitelist' and package in rule.get(category, [])
+
+
 def config():
     return json.loads(Path(CONFIG).read_text(encoding="utf-8"))
 
@@ -185,7 +194,7 @@ async def guard(request: Request, call_next):
 def health():
     with db() as conn:
         conn.execute("SELECT 1")
-    return {"ok": True, "version": "0.7.0"}
+    return {"ok": True, "version": "0.8.0"}
 
 
 @app.post("/v1/events")
@@ -200,9 +209,9 @@ def ingest(event: Event, authorization: str | None = Header(default=None)):
     if event.hidden:
         value.update(app=None, music=None, device_state=None)
     else:
-        if event.app not in rule.get("apps", []):
+        if not permitted(rule, "apps", event.app):
             value["app"] = None
-        if event.music and event.music.player not in rule.get("players", []):
+        if event.music and not permitted(rule, "players", event.music.player):
             value["music"] = None
         elif value["music"] and not rule.get("lyrics", False):
             value["music"]["lyric"] = None
@@ -241,10 +250,10 @@ def project(cfg, audience):
         # Apply current rules again: a config change immediately retracts old data.
         fields = audience.get("fields", [])
         item = {"device": identifier, "age_seconds": round(now - received), "expires_in": max(0, round(ttl - (now - received)))}
-        if "app" in fields and data["app"] in device.get("apps", []):
+        if "app" in fields and permitted(device, "apps", data["app"]):
             item["app"] = data["app"]
         music = data.get("music")
-        if "music" in fields and music and music["player"] in device.get("players", []):
+        if "music" in fields and music and permitted(device, "players", music["player"]):
             music = dict(music)
             # Reception time anchors progress without depending on device wall clocks.
             position = music['position_ms'] + (max(0, now-received)*1000*music.get('playback_rate', 1) if music['playing'] else 0)

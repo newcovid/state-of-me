@@ -11,10 +11,11 @@ $sources = @(Get-ChildItem "$root/src" -Recurse -Filter *.java | ForEach-Object 
 Run 'javac' (@('-encoding','UTF-8','--release','8','-classpath',$androidJar,'-d',"$out/classes") + $sources)
 Run 'jar' @('--create','--file',"$out/classes.jar",'-C',"$out/classes",'.')
 Run "$bt/d8.bat" @('--lib',$androidJar,'--min-api','26','--output',"$out/dex","$out/classes.jar")
-Run "$bt/aapt2.exe" @('link','-I',$androidJar,'--manifest',"$root/AndroidManifest.xml",'-o',"$out/unsigned.apk")
+Run "$bt/aapt2.exe" @('compile','--dir',"$root/res",'-o',"$out/resources.zip")
+Run "$bt/aapt2.exe" @('link','-I',$androidJar,'--manifest',"$root/AndroidManifest.xml",'-o',"$out/unsigned.apk","$out/resources.zip")
 Run 'jar' @('--update','--file',"$out/unsigned.apk",'-C',"$out/dex",'classes.dex')
 Run "$bt/zipalign.exe" @('-f','4',"$out/unsigned.apk","$out/aligned.apk")
 $keystore = Join-Path $out 'preview.keystore'
 if (-not (Test-Path $keystore)) { Run 'keytool' @('-genkeypair','-keystore',$keystore,'-storepass','android','-keypass','android','-alias','preview','-dname','CN=State of Me Development Preview','-keyalg','RSA','-validity','3650') }
-Run "$bt/apksigner.bat" @('sign','--ks',$keystore,'--ks-pass','pass:android','--key-pass','pass:android','--out',"$out/state-of-me-0.7.0.apk","$out/aligned.apk")
-Run "$bt/apksigner.bat" @('verify','--verbose',"$out/state-of-me-0.7.0.apk")
+Run "$bt/apksigner.bat" @('sign','--ks',$keystore,'--ks-pass','pass:android','--key-pass','pass:android','--out',"$out/state-of-me-0.8.0.apk","$out/aligned.apk")
+Run "$bt/apksigner.bat" @('verify','--verbose',"$out/state-of-me-0.8.0.apk")

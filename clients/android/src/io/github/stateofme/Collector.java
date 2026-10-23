@@ -47,7 +47,8 @@ public class Collector extends Service {
   Notification n=new Notification.Builder(this,"sharing").setSmallIcon(android.R.drawable.ic_menu_info_details).setContentTitle("State of Me 正在分享允许的状态").setContentText("点击查看权限和过滤；暂停会清空状态").setContentIntent(open).addAction(new Notification.Action.Builder(null,"暂停",stop).build()).setOngoing(true).build();startForeground(1,n);executor=Executors.newSingleThreadScheduledExecutor();
  }
  @Override public int onStartCommand(Intent i,int flags,int id){if(i!=null&&"stop".equals(i.getAction())){stopping=true;prefs.edit().putBoolean("enabled",false).apply();executor.execute(()->{send(true);stopForeground(STOP_FOREGROUND_REMOVE);stopSelf();});}else if(!prefs.getBoolean("enabled",false)){stopSelf();}else if(!stopping){executor.scheduleWithFixedDelay(()->requestUpdate(),0,5,TimeUnit.SECONDS);stopping=true;}return START_NOT_STICKY;}
- boolean allowed(String list,String item){for(String s:prefs.getString(list,"").split(","))if(s.trim().equals(item))return true;return false;}
+ boolean allowed(String list,String item){return AppFilter.allows(prefs.getString(list+"_mode","whitelist"),prefs.getString(list,""),prefs.getString(list+"_blocked",""),prefs.getString(list+"_candidates",""),item);}
+
  String trim(String s,int n){if(s==null)return "";return s.substring(0,Math.min(n,s.length()));}
  void send(boolean forceHidden){
   try{
@@ -81,7 +82,7 @@ public class Collector extends Service {
       String lyricStatus=embedded.status;
       String source="";
       if(embedded.lyrics!=null&&"synced".equals(lyricStatus))source=embedded.lyrics;
-      else if(title.equals(prefs.getString("lyricTitle",""))&&!prefs.getString("lrc","").isEmpty()){source=prefs.getString("lrc","");lyricStatus=Lyrics.hasTimeline(source)?"synced":"plain";}
+
       if(!source.isEmpty()){String line=Lyrics.current(source,pos);if(line!=null)music.put("lyric",line);music.put("lyric_window",window(source,pos,duration));}
       String identity=chosen.getPackageName()+"\u0001"+title+"\u0001"+artist+"\u0001"+album+"\u0001"+duration+"\u0001"+m.getString(MediaMetadata.METADATA_KEY_MEDIA_ID);
       byte[] digest=java.security.MessageDigest.getInstance("SHA-256").digest(identity.getBytes("UTF-8"));StringBuilder hash=new StringBuilder();for(byte b:digest)hash.append(String.format(Locale.ROOT,"%02x",b&255));

@@ -1,4 +1,4 @@
-# Android context capabilities — 0.7 development preview
+# Android context capabilities — 0.8 development preview
 
 All collection uses public Android APIs (min API 26); root/LSPosed are unnecessary.
 The scope is current personal device/activity state, not every datum Android can expose.
@@ -6,7 +6,7 @@ The scope is current personal device/activity state, not every datum Android can
 | Category | Collected information | Limits |
 |---|---|---|
 | Application | allowlisted package; optional label and observed foreground-segment duration | last-hour UsageEvents, screen on/unlocked; multi-window/lost OEM events can make this approximate, not a daily usage report |
-| Music | title, artist, album, playback status/rate/progress, lyrics/window | authorized MediaSession players; embedded MP3/FLAC/M4A lyrics or matching manual LRC; unsupported tags remain unavailable |
+| Music | title, artist, album, playback status/rate/progress, lyrics/window | authorized MediaSession players; embedded MP3/FLAC/M4A lyrics; unsupported tags remain unavailable |
 | Device | battery %, charging source, battery health/temperature/voltage, screen/lock/power-save | temperature is battery temperature, not CPU; vendor reporting may be unavailable |
 | Network (new) | active default network, validation, metering, transport classes | no network names, IPs or locations; system validation is a snapshot |
 | Audio (new) | media stream volume/mute, ringer/DND mode, connected output classes | outputs are available devices, not proof of the actual media route or wearer |
@@ -38,3 +38,5 @@ References: [NetworkCapabilities](https://developer.android.com/reference/androi
 Upgrade backend first, then AstrBot adapter and Android APK. Back up server code/config and adapter before restart. Keep public fields music/lyric/lyric_window unless intentionally changing public sharing.
 0.7 local checks: 20 Python contract/identity/adapter tests; playback JS contracts; Android compilation and APK signature verification. New hardware-derived values still require physical-device use and OEM coverage. Synthetic contract tests do not establish live sensor correctness or group conversation quality.
 After APK upgrade, reopen the app, choose categories in 分享 and save/start. Ask explicitly “我的网络怎么样” or “群主的电量还有多少”; test switching categories off and waiting for next update/TTL.
+
+0.8 adds native miuix-inspired UI, named app selection, scoped local blacklists, and server filter modes. Manual single-song LRC is removed. See QUICKSTART.md and UX-0.8.md.

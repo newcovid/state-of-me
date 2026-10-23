@@ -40,3 +40,8 @@ Python 13 项合约/适配测试通过；Node 播放测试通过；Java 限流�
 - Public projection configuration is unchanged. New Android category switches default off.
 - Live hardware values and group replies need user testing after reopening/enabling sharing; no QQ messages were sent during verification.
 - See ANDROID-CAPABILITIES.md for category coverage, API limitations and opt-in configuration.
+
+
+## 0.8 UX preview (2026-10-24)
+
+23 Python tests, Java AppFilter cases, JS playback checks, signed Android build. Installed final APK on the connected phone; inspected home/sharing/lyrics/picker screenshots. Backend health 0.8.0 and adapter redeployed with backup. Scope/filter and UX acceptance boundaries are documented in UX-0.8.md. Private app-list screenshots are not published. No actual group message was sent.
