@@ -2,7 +2,7 @@
 
 自托管的个人实时状态发布工具。免 Root Android + Windows → 独立 HTTP API → 网页 / AstrBot。
 
-**0.12 开发预览**：当前快照、白名单过滤、账号与设备隔离、群分享与公开分享独立授权、45 秒失联过期，公开访问默认关闭。
+**0.14 开发预览**：当前快照、白名单过滤、账号与设备隔离、群分享与公开分享独立授权、45 秒失联过期，公开访问默认关闭。
 
 ## 能力
 
@@ -10,6 +10,8 @@
 - 歌词：授权音乐目录，在本机索引 MP3/FLAC/M4A 的内嵌歌词，按曲名、歌手、专辑与时长严格匹配。同步标签发送当前句及最多 16 行、未来 60 秒的歌词窗口，读者需单独获得窗口权限；纯文本不猜进度。不访问 Poweramp 私有数据库。
 - Windows：WPF UI Fluent 组件、托盘、应用名称多选过滤、标准媒体与目录歌词、电源/空闲/网络/音量/资源，以及可选 WhatPulse 统计；事件合并与 20 秒保活。详见[桌面端使用与验证](docs/DESKTOP-0.10.md)。
 - FastAPI + SQLite：按受众投影、重放/乱序保护、隐身和 TTL。Android 播放事件触发更新并保留心跳；网页每 5 秒校准，页面内存缓存歌词并连续推进进度。AstrBot 以真实群事件识别查询对象并校验分享权限；“我”取实际发送者，“群主”实时查询 QQ 角色，未绑定他人不返回主人状态。
+
+- Android 使用统计：屏幕交互／解锁使用时长、解锁次数、应用排行、7／30 天趋势；系统低频补算与独立私有历史接口，群查询另行授权。详见 [统计口径与部署](docs/ANDROID-USAGE-0.14.md)。
 
 ## 多用户账号
 
@@ -19,7 +21,7 @@
 
 [下载 Android / Windows 开发预览](https://github.com/newcovid/state-of-me/releases)；已有服务只需安装客户端并连接账号。自行搭建请从下方“安装与测试”开始，可用初始化工具生成配套配置。
 
-[0.12 账号引导与验证](docs/ACCOUNT-FLOW-0.12.md) · [安装与测试](docs/QUICKSTART.md) · [开发计划](docs/PLAN-0.6.md) · [隐私和限制](docs/PRIVACY.md) · [通用性审查](docs/GENERALITY.md) · [歌词窗口协议](docs/PLAYBACK-API.md)
+[内部分发说明](docs/INTERNAL-DISTRIBUTION-0.14.md) · [0.12 账号引导与验证](docs/ACCOUNT-FLOW-0.12.md) · [安装与测试](docs/QUICKSTART.md) · [开发计划](docs/PLAN-0.6.md) · [隐私和限制](docs/PRIVACY.md) · [通用性审查](docs/GENERALITY.md) · [歌词窗口协议](docs/PLAYBACK-API.md)
 
 ```powershell
 python -m pip install -r server/requirements.txt

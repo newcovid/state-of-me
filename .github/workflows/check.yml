@@ -25,7 +25,7 @@ jobs:
         with:
           python-version: '3.13'
       - run: pip install -r server/requirements.txt httpx
-      - run: python -m unittest server.test_app server.test_accounts server.test_bootstrap integrations.astrbot.test_identity integrations.astrbot.test_adapter -v
+      - run: python -m unittest server.test_app server.test_accounts server.test_bootstrap server.test_usage integrations.astrbot.test_identity integrations.astrbot.test_adapter -v
       - run: node server/test_playback.cjs
       - run: node server/test_widget.cjs
       - run: node server/test_account_ui.cjs
@@ -39,6 +39,8 @@ jobs:
           java -cp /tmp/lyrics-test LyricsTest
           javac -d /tmp/lyrics-test clients/android/src/io/github/stateofme/UpdateTiming.java clients/android/tests/UpdateTimingTest.java
           java -cp /tmp/lyrics-test UpdateTimingTest
+          javac -d /tmp/lyrics-test clients/android/src/io/github/stateofme/UsageLedger.java clients/android/tests/UsageLedgerTest.java
+          java -cp /tmp/lyrics-test UsageLedgerTest
           javac -d /tmp/lyrics-test clients/android/src/io/github/stateofme/PublishPolicy.java clients/android/tests/PublishPolicyTest.java
           java -cp /tmp/lyrics-test PublishPolicyTest
           javac -encoding UTF-8 -d /tmp/lyrics-test clients/android/src/io/github/stateofme/AppFilter.java clients/android/tests/AppFilterTest.java

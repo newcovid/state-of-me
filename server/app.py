@@ -13,7 +13,7 @@ from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-app = FastAPI(title="State of Me", version="0.13.0")
+app = FastAPI(title="State of Me", version="0.14.0")
 DB = os.getenv("SOM_DB", "state.db")
 CONFIG = os.getenv("SOM_CONFIG", "config.json")
 WEB = Path(__file__).parent / "web"
@@ -237,16 +237,17 @@ def authenticate(authorization, entries):
 @app.middleware("http")
 async def guard(request: Request, call_next):
     # Never cache personal state, even for unauthenticated public projections.
+    maximum = 1048576 if request.url.path == "/v1/usage" else 16384
     length = request.headers.get("content-length")
     if length:
         try:
-            if int(length) < 0 or int(length) > 16384:
+            if int(length) < 0 or int(length) > maximum:
                 return JSONResponse({"detail": "Payload too large"}, status_code=413)
         except ValueError:
             return JSONResponse({"detail": "Invalid content length"}, status_code=400)
     if request.method == "POST":
         body = await request.body()
-        if len(body) > 16384:
+        if len(body) > maximum:
             return JSONResponse({"detail": "Payload too large"}, status_code=413)
     response = await call_next(request)
     response.headers["Cache-Control"] = "no-store"
@@ -260,7 +261,7 @@ async def guard(request: Request, call_next):
 def health():
     with db() as conn:
         conn.execute("SELECT 1")
-    return {"ok": True, "version": "0.13.0"}
+    return {"ok": True, "version": "0.14.0"}
 
 
 @app.post("/v1/events")
@@ -386,3 +387,6 @@ def widget_javascript():
 
 from . import accounts
 accounts.install(app, db, raw_config, project, authenticate, WEB)
+
+from . import usage
+usage.install(app, db, config, authenticate, accounts)

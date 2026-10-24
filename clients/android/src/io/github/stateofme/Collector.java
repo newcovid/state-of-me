@@ -25,7 +25,7 @@ public class Collector extends Service {
  final MediaSessionManager.OnActiveSessionsChangedListener sessions=controllers->requestUpdate();
  final SharedPreferences.OnSharedPreferenceChangeListener preferences=(p,key)->{
   if(key!=null&&(key.equals("apps")||key.startsWith("apps_")||key.equals("players")||key.startsWith("players_")||
-   Arrays.asList("device_state","network","audio","resources","collector_health","app_details","libraryVersion","url","token").contains(key))){contextDirty=true;if(key.equals("url")||key.equals("token"))connectionChanged();else requestUpdate();}
+   Arrays.asList("usage_history","device_state","network","audio","resources","collector_health","app_details","libraryVersion","url","token").contains(key))){contextDirty=true;if(key.equals("url")||key.equals("token"))connectionChanged();else requestUpdate();}
  };
  final BroadcastReceiver stateEvents=new BroadcastReceiver(){
   int batteryLevel=-1,batteryStatus=-1;
@@ -111,6 +111,7 @@ public class Collector extends Service {
  void send(boolean forceHidden){
   try{
    boolean hidden=forceHidden||!prefs.getBoolean("enabled",false);
+   UsageHistory.sync(this,hidden);
    long monotonic=SystemClock.elapsedRealtime();
    if(!hidden&&!policy.retryReady(monotonic))return;
    if(!hidden&&getSystemService(ConnectivityManager.class).getActiveNetwork()==null){policy.failed(monotonic);String message="网络不可用；等待恢复，旧状态会过期";if(!message.equals(prefs.getString("status","")))prefs.edit().putString("status",message).apply();return;}

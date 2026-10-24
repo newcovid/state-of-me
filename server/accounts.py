@@ -236,7 +236,8 @@ def install(app, db, config, project, authenticate, web):
             groups = [r[0] for r in c.execute('SELECT group_id FROM group_grants WHERE uid=?', (uid,))]
             pending = [dict(id=r[0], group_id=r[1], qq=r[2]) for r in c.execute('SELECT code_hash,group_id,candidate FROM bind_codes WHERE uid=? AND expires>? AND candidate IS NOT NULL', (uid, time.time()))]
             public = json.loads(c.execute('SELECT public_fields FROM users WHERE id=?', (uid,)).fetchone()[0])
-        return dict(name=name, devices=devices, qq=bindings, groups=groups, pending=pending, public=bool(public))
+            usage_groups = [r[0] for r in c.execute('SELECT group_id,fields FROM group_grants WHERE uid=?', (uid,)) if 'usage_history' in json.loads(r[1])]
+        return dict(name=name, devices=devices, qq=bindings, groups=groups, usage_groups=usage_groups, pending=pending, public=bool(public))
 
     @app.get('/v1/accounts/status')
     def own_status(request: Request):
@@ -250,6 +251,9 @@ def install(app, db, config, project, authenticate, web):
             c.execute('BEGIN IMMEDIATE')
             if not c.execute('SELECT 1 FROM user_devices WHERE id=? AND uid=?', (body.id, uid)).fetchone():
                 raise HTTPException(404, '没有找到此设备')
+            from .usage import schema
+            schema(c)
+            c.execute('DELETE FROM usage_history WHERE device=?', (body.id,))
             c.execute('DELETE FROM snapshots WHERE device=?', (body.id,))
             c.execute('DELETE FROM user_devices WHERE id=?', (body.id,))
             c.execute('DELETE FROM pairings WHERE device=?', (body.id,))
@@ -259,6 +263,9 @@ def install(app, db, config, project, authenticate, web):
     def disconnect(request: Request):
         identifier, _ = static_auth(request.headers.get('authorization'), enrich(raw_config())['devices'])
         with connection() as c:
+            from .usage import schema
+            schema(c)
+            c.execute('DELETE FROM usage_history WHERE device=?', (identifier,))
             c.execute('DELETE FROM snapshots WHERE device=?', (identifier,))
             c.execute('DELETE FROM user_devices WHERE id=?', (identifier,))
             c.execute('DELETE FROM pairings WHERE device=?', (identifier,))

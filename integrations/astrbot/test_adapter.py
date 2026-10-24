@@ -44,6 +44,17 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
         api=types.SimpleNamespace(call_action=AsyncMock(return_value=members))
         return types.SimpleNamespace(message_str=text,get_group_id=lambda:'123456',get_platform_name=lambda:'aiocqhttp',get_sender_id=lambda:sender,get_self_id=lambda:'999999',get_messages=lambda:[],bot=types.SimpleNamespace(api=api))
 
+    async def test_history_uses_same_identity_and_separate_tool(self):
+        data={'status':'available','devices':[{'device':'phone','days':[]}]}
+        with patch('urllib.request.urlopen',return_value=io.BytesIO(json.dumps(data).encode())) as network:
+            result=await self.adapter.get_usage_history(self.event('我今天用了多久手机'),1)
+            self.assertIn('历史统计',result)
+            self.assertIn('111111',result)
+            self.assertEqual(network.call_args.args[0].full_url,'https://example.com/v1/bot/usage/111111?group_id=123456&days=1')
+        with patch('urllib.request.urlopen') as network:
+            self.assertIn('只支持',await self.adapter.get_usage_history(self.event('我用了多久'),999))
+            network.assert_not_called()
+
     async def test_multiuser_reads_actual_sender_and_preserves_denial(self):
         self.m.configuration=lambda:{'url':'https://example.com','groups':{'123456':{'bot_token':'b'*32}}}
         with patch('urllib.request.urlopen',return_value=io.BytesIO(b'{"status":"not_shared","devices":[]}')) as network:

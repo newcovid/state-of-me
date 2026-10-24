@@ -86,7 +86,7 @@ private suspend fun request(server: String, path: String, body: JSONObject, toke
                 busy = true; prefs.edit().putBoolean("enabled", false).apply(); stopService(Intent(this@ConnectionPage, Collector::class.java))
                 try { request(prefs.getString("url", "").orEmpty(), "/v1/device/disconnect", JSONObject(), prefs.getString("token", "").orEmpty()); message = "已断开连接" }
                 catch (_: Exception) { message = "本机已断开。服务端暂不可达，旧状态会到期消失；请在账号页移除此设备。" }
-                MusicLibrary.clear(this@ConnectionPage); prefs.edit().clear().apply(); approved = null; code = ""; secret = ""; clearPair(); connected = false; disconnect = false; busy = false
+                UsageHistory.clear(this@ConnectionPage); getSystemService(android.app.job.JobScheduler::class.java).cancel(1401); MusicLibrary.clear(this@ConnectionPage); prefs.edit().clear().apply(); approved = null; code = ""; secret = ""; clearPair(); connected = false; disconnect = false; busy = false
             } }) { Text(if (busy) "正在断开…" else "断开并清除") }
         }
     }
