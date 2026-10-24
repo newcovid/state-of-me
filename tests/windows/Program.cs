@@ -12,3 +12,5 @@ var reset=WhatPulseSource.Summarize(System.Text.Json.Nodes.JsonNode.Parse("{\"ke
 Check(reset["download_bytes_per_second"]==null,"Pulse reset invalidates all differences");
 Check(WhatPulseSource.Summarize(second,first,100,1100)["sample_seconds"]==null,"stale sample ignored");
 Console.WriteLine("WhatPulse delta and reset tests passed");
+
+Check(!System.Text.Json.JsonSerializer.Serialize(cfg).Contains("test-only-not-a-real-credential"),"plaintext token excluded from serialized settings");

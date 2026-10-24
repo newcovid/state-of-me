@@ -182,6 +182,7 @@ public class Collector extends Service {
     try(OutputStream out=conn.getOutputStream()){out.write(body);}code=conn.getResponseCode();
     InputStream response=code>=400?conn.getErrorStream():conn.getInputStream();if(response!=null)try(InputStream in=response){byte[] buffer=new byte[1024];int total=0,n;while((n=in.read(buffer))!=-1){total+=n;if(total>16384)break;}}
    }finally{conn.disconnect();}
+   if(code==401){prefs.edit().putBoolean("enabled",false).putBoolean("connection_invalid",true).putString("status","连接已失效，请在连接页断开旧设备后重新连接").apply();stopSelf();return;}
    if(code==200){
     long lyricDelay=Long.MAX_VALUE;
     if(payloadMusic!=null){lastSentTrack=payloadMusic.optString("track_id");lastSentPosition=payloadMusic.optLong("position_ms");lastSentRate=payloadMusic.optDouble("playback_rate",1);lastSentAt=monotonic;

@@ -2,3 +2,5 @@
 [hidden]{display:none!important}
 
 .context-details{margin:16px 0}.context-details dl{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px 16px;font-size:13px}.context-details dd{margin:0;overflow-wrap:anywhere}.context-details dt{opacity:.7}
+
+#account-panel section,#login-panel,#recovery-panel{padding:24px 0;border-bottom:1px solid #b7c6d4}#account-panel input[type=checkbox]{width:auto;margin-right:8px}#account-panel label{display:block;margin:12px 0}#account-panel pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:360px;overflow:auto}#account-panel select,textarea{max-width:100%;padding:10px;font:inherit}#account-panel button{margin:8px 8px 8px 0}#message{min-height:1.5em}#recovery-value{width:100%;box-sizing:border-box}

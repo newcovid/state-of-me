@@ -6,6 +6,8 @@ namespace StateOfMe;
 public sealed class Settings
 {
     public string Endpoint { get; set; } = "";
+    public bool ConnectionInvalid { get; set; } = false;
+    public string Account { get; set; } = "";
     public string ProtectedToken { get; set; } = "";
     public string AppMode { get; set; } = "whitelist";
     public Dictionary<string, string> AppAliases { get; set; } = new(StringComparer.OrdinalIgnoreCase);
@@ -42,6 +44,7 @@ public sealed class Settings
     }
     public static string Folder => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "StateOfMe");
     public static string FilePath => Path.Combine(Folder, "settings.json");
+    [System.Text.Json.Serialization.JsonIgnore]
     public string Token
     {
         get

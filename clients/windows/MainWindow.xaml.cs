@@ -31,6 +31,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         SystemThemeWatcher.Watch(this);
         Endpoint.Text = settings.Endpoint;
         Token.Password = settings.Token;
+        ConnectionView();
         FilterMode.SelectedIndex = settings.AppMode == "off" ? 0 : settings.AppMode == "blacklist" ? 2 : 1;
         SharePresence.IsChecked = settings.Presence;
         ShareDevice.IsChecked = settings.Device;
@@ -100,17 +101,97 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
     async Task Exit()
     {
         exiting = true;
+        pairing?.Cancel();
         hideTimer?.Cancel();
         await engine.Pause();
         engine.Dispose();
         tray.Dispose();
         System.Windows.Application.Current.Shutdown();
     }
+    CancellationTokenSource? pairing;
+    string pairUrl = "";
+    void ConnectionView()
+    {
+        bool connected = settings.Token.Length >= 24;
+        AccountLabel.Text = settings.ConnectionInvalid ? "连接已失效，请断开后重新连接" : connected ? "✓ 已连接 · " + (settings.Account.Length > 0 ? settings.Account : "原有设备连接") : "在浏览器注册或登录，确认这台电脑即可，无需填写密钥。";
+        ConnectButton.IsEnabled = !connected;
+        DisconnectButton.IsEnabled = connected;
+        Endpoint.IsReadOnly = connected;
+        Token.IsEnabled = !connected;
+    }
+    static void Browser(string url) => System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true });
+    void ManageAccount(object sender, RoutedEventArgs e)
+    {
+        if (Uri.TryCreate(Endpoint.Text.Trim(), UriKind.Absolute, out var uri) && uri.Scheme == "https" && string.IsNullOrEmpty(uri.UserInfo))
+            try { Browser(Endpoint.Text.Trim().TrimEnd('/') + "/account"); } catch { PairStatus.Text = "请手动用浏览器打开服务地址下的 /account 页面"; }
+        else PairStatus.Text = "请填写 HTTPS 服务地址";
+    }
+    void ReopenPair(object sender, RoutedEventArgs e) { if (pairUrl.Length > 0) try { Browser(pairUrl); } catch { PairStatus.Text += " 请手动打开：" + pairUrl; } }
+    static async Task<JsonElement> AccountRequest(string endpoint, string path, object body, CancellationToken cancellation, string token = "")
+    {
+        using var http = new HttpClient(new HttpClientHandler { AllowAutoRedirect = false }) { Timeout = TimeSpan.FromSeconds(10) };
+        using var request = new HttpRequestMessage(HttpMethod.Post, endpoint + path) { Content = new StringContent(JsonSerializer.Serialize(body), System.Text.Encoding.UTF8, "application/json") };
+        if (token.Length > 0) request.Headers.Authorization = new("Bearer", token);
+        using var response = await http.SendAsync(request, cancellation);
+        response.EnsureSuccessStatusCode();
+        return JsonDocument.Parse(await response.Content.ReadAsStringAsync(cancellation)).RootElement.Clone();
+    }
+    async void ConnectAccount(object sender, RoutedEventArgs e)
+    {
+        if (!Uri.TryCreate(Endpoint.Text.Trim(), UriKind.Absolute, out var uri) || uri.Scheme != "https" || !string.IsNullOrEmpty(uri.UserInfo)) { PairStatus.Text = "请先填写 HTTPS 服务地址"; return; }
+        pairing?.Cancel(); pairing = new(); var cancellation = pairing.Token;
+        var endpoint = Endpoint.Text.Trim().TrimEnd('/');
+        ConnectButton.IsEnabled = false; Endpoint.IsReadOnly = true;
+        try
+        {
+            var p = await AccountRequest(endpoint, "/v1/pairings", new { label = "Windows 电脑", platform = "windows" }, cancellation);
+            var code = p.GetProperty("code").GetString(); var secret = p.GetProperty("secret").GetString();
+            pairUrl = endpoint + "/account?pair=" + code; ReopenPairButton.Visibility = Visibility.Visible;
+            PairStatus.Text = "连接码：" + code + "（10 分钟有效）。请在浏览器确认设备，然后返回这里。";
+            ReopenPair(this, new RoutedEventArgs());
+            var expires = DateTime.UtcNow.AddMinutes(10);
+            while (DateTime.UtcNow < expires)
+            {
+                await Task.Delay(3000, cancellation);
+                JsonElement result;
+                try { result = await AccountRequest(endpoint, "/v1/pairings/poll", new { code, secret }, cancellation); }
+                catch (HttpRequestException) { PairStatus.Text = "连接暂时中断，将自动重试。连接码：" + code; continue; }
+                if (result.GetProperty("status").GetString() != "approved") continue;
+                var name = result.GetProperty("account").GetString()!; var token = result.GetProperty("token").GetString()!;
+                Open();
+                if (System.Windows.MessageBox.Show(this, "服务：" + endpoint + "\n账号：" + name + "\n确认这是你的账号？连接后需要选择分享内容，再手动开始分享。", "确认连接账号", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
+                {
+                    try { await AccountRequest(endpoint, "/v1/device/disconnect", new { }, cancellation, token); } catch { }
+                    PairStatus.Text = "已取消连接，没有上传状态。"; return;
+                }
+                settings.ConnectionInvalid = false; settings.Account = name; settings.Endpoint = endpoint; settings.Token = token; settings.Enabled = false; settings.Save();
+                Token.Password = token; PairStatus.Text = "连接成功。请选择分享内容，再点击保存并开始分享。"; return;
+            }
+            PairStatus.Text = "连接码已过期，请重新连接账号。";
+        }
+        catch (OperationCanceledException) { PairStatus.Text = "连接已取消或超时，请重试。"; }
+        catch { PairStatus.Text = "连接失败，请检查服务地址及网络。"; }
+        finally { pairUrl = ""; ReopenPairButton.Visibility = Visibility.Collapsed; ConnectionView(); }
+    }
+    async void DisconnectAccount(object sender, RoutedEventArgs e)
+    {
+        if (System.Windows.MessageBox.Show(this, "停止分享并断开设备，清空本机分享选择、手动状态和歌词目录。音乐文件会保留。是否继续？", "断开此设备", MessageBoxButton.YesNo) != MessageBoxResult.Yes) return;
+        pairing?.Cancel(); hideTimer?.Cancel(); DisconnectButton.IsEnabled = false;
+        await engine.Pause();
+        try { await AccountRequest(settings.Endpoint, "/v1/device/disconnect", new { }, CancellationToken.None, settings.Token); PairStatus.Text = "已断开设备。"; }
+        catch { PairStatus.Text = "本机已断开，服务器暂不可达。旧状态到期后会消失，请在账号页移除此设备。"; }
+        var clean = new Settings { Endpoint = settings.Endpoint, AutoStart = settings.AutoStart };
+        foreach (var property in typeof(Settings).GetProperties().Where(x => x.CanWrite)) property.SetValue(settings, property.GetValue(clean));
+        settings.Save(); Token.Password = ""; apps.Clear(); players.Clear(); Manual.Text = ""; directory = ""; DirectoryLabel.Text = ""; FilterMode.SelectedIndex = 1; PreferredPlayer.ItemsSource = null;
+        foreach (var check in new[] { SharePresence, ShareDevice, ShareNetwork, ShareAudio, ShareResources, ShareDisplay, ShareWhatPulse, ShareMusic }) check.IsChecked = false;
+        await engine.Configure(settings); ConnectionView();
+    }
     void UpdateView()
     {
         if (!IsVisible)
             return;
         StatusText.Text = engine.Status;
+        if (settings.ConnectionInvalid) ConnectionView();
         Summary.Text = settings.Enabled ? (engine.Preview["app_details"]?["label"]?.ToString() ?? engine.Preview["music"]?["title"]?.ToString() ?? "等待允许分享的活动") : "分享已暂停";
         Counters.Text = $"采集 {engine.Collections} 次    上传 {engine.Uploads} 次    去重 {engine.Skipped} 次";
         Preview.Text = engine.Preview.ToJsonString(new JsonSerializerOptions { WriteIndented = true, Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping });
@@ -125,6 +206,8 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
             StatusText.Text = "请填写 HTTPS 服务地址和有效写入令牌";
             return;
         }
+        if (settings.Token.Length >= 24 && (settings.Token != Token.Password || settings.Endpoint != Endpoint.Text.Trim().TrimEnd('/')))
+        { StatusText.Text = "请先断开旧设备，再更换账号或服务地址"; return; }
         hideTimer?.Cancel();
         settings.Endpoint = Endpoint.Text.Trim().TrimEnd('/');
         settings.Token = Token.Password;
@@ -258,6 +341,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
     }
     async void AudiencePreview(object sender, RoutedEventArgs e)
     {
+        if (settings.Account.Length > 0) { ManageAccount(sender, e); return; }
         try
         {
             if (!Uri.TryCreate(Endpoint.Text.Trim(), UriKind.Absolute, out var address) || address.Scheme != "https" || !string.IsNullOrEmpty(address.UserInfo))

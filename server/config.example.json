@@ -66,5 +66,11 @@
     "enabled": false,
     "devices": [],
     "fields": []
+  },
+  "accounts": {
+    "registration": false,
+    "max_users": 100,
+    "origin": "https://example.com",
+    "bot_groups": {}
   }
 }

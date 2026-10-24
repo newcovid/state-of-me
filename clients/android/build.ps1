@@ -10,4 +10,4 @@ if (-not (Test-Path $key)) {
 }
 & "$PSScriptRoot/gradlew.bat" -p $PSScriptRoot assembleRelease --console=plain
 if ($LASTEXITCODE -ne 0) { throw 'Android build failed' }
-Copy-Item -LiteralPath "$PSScriptRoot/build/outputs/apk/release/StateOfMeAndroid-release.apk" -Destination "$PSScriptRoot/build/state-of-me-0.9.1.apk"
+Copy-Item -LiteralPath "$PSScriptRoot/build/outputs/apk/release/StateOfMeAndroid-release.apk" -Destination "$PSScriptRoot/build/state-of-me-0.11.0.apk"

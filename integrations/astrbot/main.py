@@ -23,7 +23,7 @@ def select_signals(result, text):
             device.pop('music', None)
         if not specific:
             device = {k: v for k, v in device.items() if k in
-                      ('device', 'age_seconds', 'expires_in', 'app', 'app_details', 'music', 'device_state', 'manual_status', 'presence')}
+                      ('device', 'device_label', 'age_seconds', 'expires_in', 'app', 'app_details', 'music', 'device_state', 'manual_status', 'presence')}
             state = device.pop('device_state', {}) or {}
             # Avoid irrelevant diagnostics when there is a concrete activity.
             if not device.get('app') and not device.get('music'):
@@ -44,10 +44,38 @@ def configuration():
         return json.load(f)
 
 
-@register("state_of_me", "State of Me contributors", "Read identity-bound personal presence", "0.10.0")
+@register("state_of_me", "State of Me contributors", "Read identity-bound personal presence", "0.11.0")
 class StateOfMe(Star):
     def __init__(self, context: Context):
         super().__init__(context)
+
+    @filter.command("状态绑定")
+    async def bind_account(self, event: AstrMessageEvent, code: str = ""):
+        """Bind only the authenticated QQ sender, never an LLM-supplied identity."""
+        event.stop_event()
+        cfg = configuration()
+        group = str(event.get_group_id())
+        binding = cfg.get('groups', {}).get(group, {})
+        if event.get_platform_name() != 'aiocqhttp' or not binding.get('multiuser'):
+            yield event.plain_result('本群尚未开放账号绑定。')
+            return
+        if not re.fullmatch(r'[A-Za-z2-9]{8}', code):
+            yield event.plain_result('请在账号页面生成绑定码，再发送 /状态绑定 八位绑定码。')
+            return
+        if not cfg['url'].startswith('https://'):
+            yield event.plain_result('状态服务配置错误。')
+            return
+        def submit():
+            req = urllib.request.Request(cfg['url'].rstrip('/')+'/v1/bot/bind',
+                data=json.dumps({'code': code.upper(), 'group_id': group, 'qq': str(event.get_sender_id())}).encode(),
+                headers={'Authorization': 'Bearer '+binding['bot_token'], 'Content-Type': 'application/json'})
+            with urllib.request.urlopen(req, timeout=8) as response:
+                return json.loads(response.read(4096))
+        try:
+            result = await asyncio.to_thread(submit)
+            yield event.plain_result(result['detail'])
+        except Exception:
+            yield event.plain_result('绑定没有完成，请检查绑定码、所属群和有效期后重试。')
 
     @filter.on_llm_request()
     async def identity_context(self, event, req):
@@ -55,10 +83,10 @@ class StateOfMe(Star):
             return
         try:
             binding = configuration()['groups'].get(str(event.get_group_id()))
-            if not binding or not binding.get('owner_qq'):
+            if not binding or not (binding.get('multiuser') or binding.get('owner_qq')):
                 return
             req.system_prompt = (req.system_prompt or '') + (
-                '\n状态服务的设备主人 QQ 为 ' + str(binding['owner_qq']) +
+                '\n状态服务支持各群成员独立绑定账号。兼容设备主人 QQ 为 ' + str(binding.get('owner_qq', '未设置')) +
                 '，当前发言者 QQ 为 ' + str(event.get_sender_id()) +
                 '。询问应用、歌曲、当前活动、电量、网络、音量、存储、热状态、电脑活跃、手动状态、WhatPulse 统计或采集权限时调用 get_my_status。此工具根据真实消息识别人称；'
                 '群主身份由 QQ 接口实时校验。严格按工具返回的 subject_qq 归属状态，'
@@ -79,7 +107,7 @@ class StateOfMe(Star):
                 return '当前会话未授权查看状态。'
             binding = cfg['groups'][group]
             owner = str(binding.get('owner_qq', ''))
-            if not owner.isdigit():
+            if not owner.isdigit() and not binding.get('multiuser'):
                 return '设备主人身份尚未配置，不能确定状态归属。'
             mentions = [str(x.qq) for x in event.get_messages()
                         if type(x).__name__ == 'At' and str(x.qq) != str(event.get_self_id())]
@@ -95,18 +123,22 @@ class StateOfMe(Star):
                 if len(owners) != 1:
                     return '无法确认本群群主身份，本次不返回设备状态。'
                 subject = owners[0]
-            if subject != owner:
+            if subject != owner and not binding.get('multiuser'):
                 return json.dumps({'subject_qq': subject, 'status': 'unbound', 'detail': '此人没有绑定状态设备；不能返回其他人的状态。'}, ensure_ascii=False)
             if not cfg['url'].startswith('https://'):
                 return '服务配置错误。'
             def read():
-                req = urllib.request.Request(cfg['url'].rstrip('/')+'/v1/status', headers={'Authorization':'Bearer '+binding['token']})
+                path = '/v1/bot/status/'+subject+'?group_id='+group if binding.get('multiuser') else '/v1/status'
+                token = binding['bot_token'] if binding.get('multiuser') else binding['token']
+                req = urllib.request.Request(cfg['url'].rstrip('/')+path, headers={'Authorization':'Bearer '+token})
                 with urllib.request.urlopen(req, timeout=8) as r:
                     return json.loads(r.read(32768))
             try:
                 result = await asyncio.to_thread(read)
             except Exception:
                 return '状态服务暂时连接不上，请稍后重试；这不能说明设备主人正在做什么。'
+            if result.get('status') in ('unbound', 'not_shared'):
+                return json.dumps({'subject_qq': subject, 'status': result['status'], 'detail': '此人尚未绑定或未向本群授权。可在 '+cfg['url'].rstrip('/')+'/account 登录并绑定自己的 QQ；不能返回其他人的状态。'}, ensure_ascii=False)
             result = select_signals(result, event.message_str)
             if not result.get('devices'):
                 return json.dumps({'subject_qq': subject, 'status': 'unavailable', 'detail': ('当前没有可读取的新鲜状态。请设备主人检查 App 是否已开启分享、最近是否同步成功；也可能未向本群开放。不能据此判断本人离线。' if specific_question(event.message_str) else '暂时看不出具体在忙什么。简短回答即可，不逐项列举没有的活动，也不添加设置排查步骤。')}, ensure_ascii=False)

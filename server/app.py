@@ -1,4 +1,4 @@
-"""Single-owner presence service. Device writes and audience reads are separate."""
+"""Presence service with isolated accounts and backwards-compatible device credentials."""
 import hashlib
 import hmac
 import json
@@ -13,7 +13,7 @@ from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-app = FastAPI(title="State of Me", version="0.10.0")
+app = FastAPI(title="State of Me", version="0.11.0")
 DB = os.getenv("SOM_DB", "state.db")
 CONFIG = os.getenv("SOM_CONFIG", "config.json")
 WEB = Path(__file__).parent / "web"
@@ -194,8 +194,12 @@ def permitted(rule, category, package):
     return mode == 'whitelist' and package in rule.get(category, [])
 
 
-def config():
+def raw_config():
     return json.loads(Path(CONFIG).read_text(encoding="utf-8"))
+
+
+def config():
+    return accounts.enrich(raw_config())
 
 
 @contextmanager
@@ -217,7 +221,9 @@ def authenticate(authorization, entries):
     if len(token) < 24:
         raise HTTPException(401, "Invalid credential")
     for identifier, entry in entries.items():
-        if entry.get("enabled", True) and hmac.compare_digest(token, entry["token"]):
+        candidate = hashlib.sha256(token.encode()).hexdigest() if entry.get('token_hash') else token
+        expected = entry.get('token_hash') or entry.get('token', '')
+        if entry.get('enabled', True) and hmac.compare_digest(candidate, expected):
             return identifier, entry
     raise HTTPException(401, "Invalid credential")
 
@@ -248,7 +254,7 @@ async def guard(request: Request, call_next):
 def health():
     with db() as conn:
         conn.execute("SELECT 1")
-    return {"ok": True, "version": "0.10.0"}
+    return {"ok": True, "version": "0.11.0"}
 
 
 @app.post("/v1/events")
@@ -306,6 +312,8 @@ def project(cfg, audience):
         # Apply current rules again: a config change immediately retracts old data.
         fields = audience.get("fields", [])
         item = {"device": identifier, "age_seconds": round(now - received), "expires_in": max(0, round(ttl - (now - received)))}
+        if device.get("label"):
+            item["device_label"] = device["label"]
         if "app" in fields and permitted(device, "apps", data["app"]):
             item["app"] = data["app"]
         music = data.get("music")
@@ -384,3 +392,7 @@ def playback_javascript():
 @app.get("/widget.js")
 def widget_javascript():
     return FileResponse(WEB / "widget.js", media_type="text/javascript")
+
+
+from . import accounts
+accounts.install(app, db, raw_config, project, authenticate, WEB)

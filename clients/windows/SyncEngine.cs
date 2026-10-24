@@ -179,6 +179,7 @@ public sealed class SyncEngine : IDisposable
                 using var response = await http.SendAsync(req);
                 if (!response.IsSuccessStatusCode)
                 {
+                    if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized) { cfg.Enabled = false; cfg.ConnectionInvalid = true; cfg.Save(); Status = "连接已失效，请断开旧设备后重新连接"; return; }
                     Status = $"同步失败 HTTP {(int)response.StatusCode}，自动退避";
                     policy.Fail(Environment.TickCount64);
                     return;

@@ -8,7 +8,7 @@
    if(d.presence?.state==='idle')details.push('电脑暂时空闲');
    if(d.manual_status?.text)details.push(d.manual_status.text);
    if(state.charging===true)details.push('充电中');if(state.locked===true)details.push('已锁屏');
-   return {label:d.device==='phone'?'手机':d.device==='desktop'?'电脑':d.device||'设备',app:d.app?(d.app_details?.label||d.app):'',details};
+   return {label:d.device_label|| (d.device==='phone'?'手机':d.device==='desktop'?'电脑':d.device||'设备'),app:d.app?(d.app_details?.label||d.app):'',details};
   }).filter(row=>row.app||row.details.length);
   return {music,rows};
  }

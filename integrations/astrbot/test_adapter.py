@@ -11,7 +11,7 @@ from unittest.mock import patch, AsyncMock
 class AdapterTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         event_module=types.ModuleType('astrbot.api.event')
-        event_module.filter=types.SimpleNamespace(on_llm_request=lambda **k:lambda f:f, llm_tool=lambda **k:lambda f:f)
+        event_module.filter=types.SimpleNamespace(command=lambda *a,**k:lambda f:f, on_llm_request=lambda **k:lambda f:f, llm_tool=lambda **k:lambda f:f)
         event_module.AstrMessageEvent=object
         star_module=types.ModuleType('astrbot.api.star')
         star_module.Context=object
@@ -26,6 +26,25 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
     def event(self,text,sender='111111',members=None):
         api=types.SimpleNamespace(call_action=AsyncMock(return_value=members))
         return types.SimpleNamespace(message_str=text,get_group_id=lambda:'123456',get_platform_name=lambda:'aiocqhttp',get_sender_id=lambda:sender,get_self_id=lambda:'999999',get_messages=lambda:[],bot=types.SimpleNamespace(api=api))
+
+    async def test_multiuser_reads_actual_sender_and_preserves_denial(self):
+        self.m.configuration=lambda:{'url':'https://example.com','groups':{'123456':{'multiuser':True,'bot_token':'b'*32}}}
+        with patch('urllib.request.urlopen',return_value=io.BytesIO(b'{"status":"not_shared","devices":[]}')) as network:
+            result=json.loads(await self.adapter.get_my_status(self.event('我在干什么')))
+            self.assertEqual(result['subject_qq'],'111111');self.assertEqual(result['status'],'not_shared')
+            self.assertEqual(network.call_args.args[0].full_url,'https://example.com/v1/bot/status/111111?group_id=123456')
+            self.assertEqual(network.call_args.args[0].get_header('Authorization'),'Bearer '+'b'*32)
+
+    async def test_binding_uses_real_sender_and_stops_llm(self):
+        self.m.configuration=lambda:{'url':'https://example.com','groups':{'123456':{'multiuser':True,'bot_token':'b'*32}}}
+        event=self.event('/状态绑定 ABCD2345')
+        event.stop_event=__import__('unittest.mock',fromlist=['Mock']).Mock()
+        event.plain_result=lambda text:text
+        with patch('urllib.request.urlopen',return_value=io.BytesIO(b'{"detail":"confirm in browser"}')) as network:
+            output=[r async for r in self.adapter.bind_account(event,'ABCD2345')]
+            body=json.loads(network.call_args.args[0].data)
+            self.assertEqual(body,{'code':'ABCD2345','group_id':'123456','qq':'111111'})
+            event.stop_event.assert_called_once();self.assertEqual(output,['confirm in browser'])
 
     async def test_desktop_signals_do_not_inventory_diagnostics(self):
         data = {'devices': [{'device': 'desktop', 'app': 'Editor',

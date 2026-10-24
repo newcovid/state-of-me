@@ -22,10 +22,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -48,11 +44,9 @@ class MainActivity : ComponentActivity() {
             prefs.edit().putString("tree", uri.toString()).apply(); MusicLibrary.scan(this, uri)
         } catch (_: Exception) { toast("无法读取这个文件夹，请重新选择") }
     }
-    private val notifications = registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
+    private val notifications = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted -> revision++; toast(if (granted) "通知已授权" else "通知未授权，可稍后在权限页开启") }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState); prefs.registerOnSharedPreferenceChangeListener(listener); enableEdgeToEdge()
-        intent.getStringExtra("server")?.let { prefs.edit().putString("url", it).apply() }
-        intent.getStringExtra("device_token")?.let { prefs.edit().putString("token", it).apply() }
         // Package replacement stops services. Reopen resumes only an existing user opt-in.
         if (prefs.getBoolean("enabled", false) && value("url").startsWith("https://") && value("token").length >= 24) {
             startForegroundService(Intent(this, Collector::class.java))
@@ -65,9 +59,6 @@ class MainActivity : ComponentActivity() {
         val refresh = revision
         var page by rememberSaveable { mutableIntStateOf(0) }
         var dialog by rememberSaveable { mutableStateOf("") }
-        var address by rememberSaveable { mutableStateOf(value("url")) }
-        var token by rememberSaveable { mutableStateOf(value("token")) }
-        val keyboard = LocalSoftwareKeyboardController.current
         Scaffold(topBar = { TopAppBar(title = "State of Me", bottomContent = {
             TabRow(minWidth = 0.dp, tabs = listOf("状态", "分享", "歌词", "连接"), selectedTabIndex = page, onTabSelected = { page = it }, modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp))
         }) }) { padding ->
@@ -83,7 +74,7 @@ class MainActivity : ComponentActivity() {
                             if (!enabled && (!value("url").startsWith("https://") || value("token").length < 24)) { page = 3; toast("请先保存服务连接") }
                             else {
                                 prefs.edit().putBoolean("enabled", !enabled).apply()
-                                if (!enabled && android.os.Build.VERSION.SDK_INT >= 33) notifications.launch("android.permission.POST_NOTIFICATIONS")
+                                if (!enabled && android.os.Build.VERSION.SDK_INT >= 33 && !notificationGranted() && !prefs.getBoolean("notification_requested", false)) requestNotifications()
                                 startForegroundService(Intent(this@MainActivity, Collector::class.java).apply { if (enabled) action = "stop" })
                             }
                         }, colors = ButtonDefaults.buttonColorsPrimary(), modifier = Modifier.fillMaxWidth()) { Text(if (prefs.getBoolean("enabled", false)) "暂停分享" else "开始分享") }
@@ -96,30 +87,27 @@ class MainActivity : ComponentActivity() {
                         Note("修改自动保存，下一次同步生效。公开展示范围仍由服务端控制。")
                     }
                     2 -> {
-                        Card(modifier = Modifier.fillMaxWidth()) { Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) { Text(value("libraryStatus", "尚未选择音乐文件夹")); Text(lyricLabel()) } }
-                        Button(onClick = { folder.launch(null) }, colors = ButtonDefaults.buttonColorsPrimary(), modifier = Modifier.fillMaxWidth()) { Text(if (value("tree").isEmpty()) "选择音乐文件夹" else "更换音乐文件夹") }
+                        Card(modifier = Modifier.fillMaxWidth()) { Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) { Text(if (MusicLibrary.hasReadPermission(this@MainActivity)) "✓ 音乐文件夹已授权" else "音乐文件夹尚未授权"); Text(value("libraryStatus", "尚未选择音乐文件夹")); Text(lyricLabel()) } }
+                        Button(onClick = { folder.launch(null) }, colors = ButtonDefaults.buttonColorsPrimary(), modifier = Modifier.fillMaxWidth()) { Text(if (!MusicLibrary.hasReadPermission(this@MainActivity)) "选择音乐文件夹并授权" else "更换音乐文件夹") }
                         if (value("tree").isNotEmpty()) Card(modifier = Modifier.fillMaxWidth()) {
                             ArrowPreference("刷新音乐库", summary = "添加歌曲后重新扫描", onClick = { MusicLibrary.scan(this@MainActivity, Uri.parse(value("tree"))) })
                             ArrowPreference("移除音乐文件夹", summary = "停止读取并清除本地索引", onClick = { dialog = "remove" })
                         }
                         Note("选择一次音乐所在文件夹，播放时自动读取歌曲标签中的歌词。音乐文件不会上传。")
                     }
-                    3 -> {
-                        TextField(value = address, onValueChange = { address = it }, label = "服务地址", singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri), modifier = Modifier.fillMaxWidth())
-                        TextField(value = token, onValueChange = { token = it }, label = "设备令牌", singleLine = true, visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password), modifier = Modifier.fillMaxWidth())
-                        Button(onClick = {
-                            val url = address.trim().trimEnd('/')
-                            if (!url.startsWith("https://") || token.trim().length < 24) toast("请填写 HTTPS 地址和有效设备令牌")
-                            else { prefs.edit().putString("url", url).putString("token", token.trim()).apply(); keyboard?.hide(); toast("连接已保存") }
-                        }, colors = ButtonDefaults.buttonColorsPrimary(), modifier = Modifier.fillMaxWidth()) { Text("保存连接") }
-                        Note("使用此设备专属的写入令牌。")
-                    }
+                    3 -> ConnectionPage()
                 }
             }
         }
         if (dialog == "apps" || dialog == "players") AppPicker(dialog) { dialog = "" }
         WindowDialog(show = dialog == "permissions", title = "所需权限", onDismissRequest = { dialog = "" }) {
-            Column { ArrowPreference("音乐通知访问", summary = "读取播放器的歌曲与进度", onClick = { startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }); ArrowPreference("应用使用情况", summary = "识别当前前台应用", onClick = { startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)) }); Button(onClick = { dialog = "" }) { Text("完成") } }
+            Column(Modifier.heightIn(max = (androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp - 180).coerceAtLeast(240).dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                PermissionRow("音乐通知访问", musicGranted(), value("players_mode", "whitelist") != "off", "读取播放器的歌曲与进度。进入后选择 State of Me 并允许通知访问。") { openPermission(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }
+                PermissionRow("应用使用情况", usageGranted(), value("apps_mode", "whitelist") != "off", "识别前台应用。进入后选择 State of Me，开启使用情况访问权限。") { openPermission(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS, Uri.parse("package:$packageName"))) }
+                PermissionRow("运行通知", notificationGranted(), true, "显示分享运行状态，方便随时暂停。") { requestNotifications() }
+                Note("返回本页会自动检查授权结果。系统页面因手机品牌而异；已授权项目无需重复操作。")
+                Button(onClick = { dialog = "" }) { Text("完成") }
+            }
         }
         WindowDialog(show = dialog == "more", title = "更多信息", onDismissRequest = { dialog = "" }) {
             Column { Toggle("应用名称与时长", "app_details"); Toggle("内存、存储与热状态", "resources"); Toggle("采集权限诊断", "collector_health"); Button(onClick = { dialog = "" }) { Text("完成") } }
@@ -140,12 +128,25 @@ class MainActivity : ComponentActivity() {
         val mode = value(key + "_mode", "whitelist")
         return when (mode) { "off" -> "不分享"; "blacklist" -> "黑名单 · 排除 ${csv(key + "_blocked").size} 个"; else -> "白名单 · 仅分享 ${csv(key).size} 个" }
     }
-    private fun permissionSummary(): String {
-        val usage = getSystemService(android.app.AppOpsManager::class.java).checkOpNoThrow(android.app.AppOpsManager.OPSTR_GET_USAGE_STATS, android.os.Process.myUid(), packageName) == android.app.AppOpsManager.MODE_ALLOWED
-        val music = Settings.Secure.getString(contentResolver, "enabled_notification_listeners").orEmpty().split(':').any { ComponentName.unflattenFromString(it) == ComponentName(this, MediaAccess::class.java) }
-        return "音乐${if (music) "已授权" else "未授权"} · 应用${if (usage) "已授权" else "未授权"}"
+    private fun usageGranted() = getSystemService(android.app.AppOpsManager::class.java).checkOpNoThrow(android.app.AppOpsManager.OPSTR_GET_USAGE_STATS, android.os.Process.myUid(), packageName) == android.app.AppOpsManager.MODE_ALLOWED
+    private fun musicGranted() = getSystemService(android.app.NotificationManager::class.java).isNotificationListenerAccessGranted(ComponentName(this, MediaAccess::class.java))
+    private fun notificationGranted() = android.os.Build.VERSION.SDK_INT < 33 || checkSelfPermission("android.permission.POST_NOTIFICATIONS") == android.content.pm.PackageManager.PERMISSION_GRANTED
+    private fun requestNotifications() {
+        if (android.os.Build.VERSION.SDK_INT < 33 || notificationGranted()) return
+        if (prefs.getBoolean("notification_requested", false) && !shouldShowRequestPermissionRationale("android.permission.POST_NOTIFICATIONS")) {
+            openPermission(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, packageName))
+        } else { prefs.edit().putBoolean("notification_requested", true).apply(); notifications.launch("android.permission.POST_NOTIFICATIONS") }
     }
-    private fun lyricLabel() = if (value("tree").isEmpty()) "选择文件夹后自动匹配歌词" else when (value("lyricStatus")) {
+    private fun permissionSummary() = "音乐${if (musicGranted()) " ✓" else if (value("players_mode") == "off") "未启用" else "未授权"} · 应用${if (usageGranted()) " ✓" else if (value("apps_mode") == "off") "未启用" else "未授权"}"
+    private fun openPermission(intent: Intent) {
+        try { startActivity(intent) } catch (_: Exception) { startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName"))) }
+    }
+    @Composable private fun PermissionRow(title: String, granted: Boolean, needed: Boolean, guide: String, request: () -> Unit) {
+        if (granted) { Text("✓ $title · 已授权"); Note(if (needed) "无需再次授权" else "当前功能未开启，可在系统设置中管理权限") }
+        else if (!needed) { Text("$title · 当前不需要"); Note("开启对应分享功能后再授权") }
+        else { Text("$title · 未授权"); Note(guide); Button(onClick = request) { Text("去授权") } }
+    }
+    private fun lyricLabel() = if (value("tree").isNotEmpty() && !MusicLibrary.hasReadPermission(this)) "文件夹授权已失效，请重新选择" else if (value("tree").isEmpty()) "选择文件夹后自动匹配歌词" else when (value("lyricStatus")) {
         "synced" -> "已匹配同步歌词"; "plain" -> "这首歌的歌词没有时间轴"; "ambiguous" -> "存在重复歌曲，暂时无法确定歌词"; "permission_required" -> "请重新选择音乐文件夹授权"; "unmatched" -> "当前歌曲不在已选文件夹中"; else -> "播放歌曲后显示匹配结果"
     }
     private data class AppEntry(val pkg: String, val label: String, val icon: ImageBitmap?)

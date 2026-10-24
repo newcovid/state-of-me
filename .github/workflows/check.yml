@@ -25,7 +25,7 @@ jobs:
         with:
           python-version: '3.13'
       - run: pip install -r server/requirements.txt httpx
-      - run: python -m unittest server.test_app integrations.astrbot.test_identity integrations.astrbot.test_adapter -v
+      - run: python -m unittest server.test_app server.test_accounts integrations.astrbot.test_identity integrations.astrbot.test_adapter -v
       - run: node server/test_playback.cjs
       - run: node server/test_widget.cjs
       - uses: actions/setup-java@v4
