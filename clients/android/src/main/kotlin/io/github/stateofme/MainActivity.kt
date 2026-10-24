@@ -129,7 +129,11 @@ class MainActivity : ComponentActivity() {
         return when (mode) { "off" -> "不分享"; "blacklist" -> "黑名单 · 排除 ${csv(key + "_blocked").size} 个"; else -> "白名单 · 仅分享 ${csv(key).size} 个" }
     }
     private fun usageGranted() = getSystemService(android.app.AppOpsManager::class.java).checkOpNoThrow(android.app.AppOpsManager.OPSTR_GET_USAGE_STATS, android.os.Process.myUid(), packageName) == android.app.AppOpsManager.MODE_ALLOWED
-    private fun musicGranted() = getSystemService(android.app.NotificationManager::class.java).isNotificationListenerAccessGranted(ComponentName(this, MediaAccess::class.java))
+    private fun musicGranted(): Boolean {
+        val listener = ComponentName(this, MediaAccess::class.java)
+        if (android.os.Build.VERSION.SDK_INT >= 27) return getSystemService(android.app.NotificationManager::class.java).isNotificationListenerAccessGranted(listener)
+        return Settings.Secure.getString(contentResolver, "enabled_notification_listeners").orEmpty().split(':').any { ComponentName.unflattenFromString(it) == listener }
+    }
     private fun notificationGranted() = android.os.Build.VERSION.SDK_INT < 33 || checkSelfPermission("android.permission.POST_NOTIFICATIONS") == android.content.pm.PackageManager.PERMISSION_GRANTED
     private fun requestNotifications() {
         if (android.os.Build.VERSION.SDK_INT < 33 || notificationGranted()) return

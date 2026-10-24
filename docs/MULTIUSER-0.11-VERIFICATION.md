@@ -11,3 +11,5 @@
 This is a development preview, not a cross-vendor Android permission certification or a large-scale public account-service capacity claim.
 
 Clean-install CI on commit b4aaa82c29e94d6dbece73bc914235f8954b0db6 passed in a fresh GitHub Linux runner: initializer-generated empty-tenant config, non-root Docker Compose build/start, registration, pairing, ingest, private public endpoint, QQ candidate+confirmation and token revocation. No production configuration was used. Run: https://github.com/newcovid/state-of-me/actions/runs/40076594090 . DNS/certificate issuance for a third-party domain remains the self-hosting operator's responsibility.
+
+Final Android compatibility pass: full lintDebug succeeded after adding an API 26 notification-access fallback; the API 27+ NotificationManager method is version guarded. PACKAGE_USAGE_STATS has a scoped ProtectedPermissions lint annotation because it is granted through the documented user Settings AppOp, not a signature grant. Android 12+ extraction rules explicitly exclude app state and pairing credentials from cloud/device transfer. This is static compatibility evidence, not a physical Android 8.0 test.

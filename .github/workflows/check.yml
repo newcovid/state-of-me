@@ -16,7 +16,7 @@ jobs:
           packages: platform-tools
           log-accepted-android-sdk-licenses: false
       - run: sdkmanager 'platforms;android-37.0' 'build-tools;37.0.0'
-      - run: bash clients/android/gradlew -p clients/android assembleDebug --console=plain
+      - run: bash clients/android/gradlew -p clients/android assembleDebug lintDebug --console=plain
   contracts:
     runs-on: ubuntu-latest
     steps:
