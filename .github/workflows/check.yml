@@ -52,3 +52,4 @@ jobs:
         with:
           dotnet-version: '8.0.x'
       - run: dotnet build clients/windows -c Release
+      - run: dotnet run --project tests/windows -c Release

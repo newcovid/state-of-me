@@ -26,7 +26,13 @@
       "audio": false,
       "resources": false,
       "collector_health": false,
-      "app_details": false
+      "app_details": false,
+      "lyrics": false,
+      "device_state": false,
+      "presence": false,
+      "manual_status": false,
+      "display": false,
+      "usage_summary": false
     }
   },
   "readers": {

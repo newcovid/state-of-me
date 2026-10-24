@@ -7,3 +7,7 @@ assert.ok(model([{...phone,music:{playing:true}}]).music);
 assert.equal(model([{device:'phone',expires_in:30,device_state:{charging:false,locked:false}}]).rows.length,0);
 assert.equal(model([{...phone,app:'<script>',app_details:null}]).rows[0].app,'<script>'); // Renderer inserts textContent only.
 assert.deepEqual(model([]),{music:undefined,rows:[]});console.log('Widget signal contracts passed');
+
+const desktop=model([{device:'desktop',expires_in:30,presence:{state:'idle'},manual_status:{text:'专注'},usage_summary:{keys:100},resources:{cpu_percent:80}}]);
+assert.deepEqual(desktop.rows[0].details,['电脑暂时空闲','专注']);
+assert.equal(desktop.rows[0].label,'电脑');

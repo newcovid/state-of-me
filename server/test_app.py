@@ -33,6 +33,48 @@ class ContractTests(unittest.TestCase):
         with patch.object(m.time, 'time', return_value=1000066):
             self.assertEqual(self.client.get('/v1/status', headers=self.rh).json()['devices'], [])
 
+    def test_desktop_categories_scoping_expiry_and_retraction(self):
+        now = int(time.time())
+        fields = ['presence', 'manual_status', 'display', 'usage_summary']
+        self.cfg['devices']['phone'].update({f: True for f in fields})
+        self.cfg['readers']['viewer']['fields'] += fields
+        self.cfg['readers']['viewer']['usage_summary_fields'] = ['keys', 'scope']
+        self.cfg['public'] = {'enabled': True, 'devices': ['phone'], 'fields': ['app']}
+        Path(m.CONFIG).write_text(json.dumps(self.cfg))
+        data = dict(presence={'state': 'idle', 'idle_seconds': 200},
+                    manual_status={'text': 'Focus', 'expires_at': now + 2},
+                    display={'monitor_count': 2, 'fullscreen': True},
+                    usage_summary={'sampled_at': now, 'keys': 42, 'upload': 123})
+        self.assertEqual(self.send(**data).status_code, 200)
+        item = self.client.get('/v1/status', headers=self.rh).json()['devices'][0]
+        self.assertEqual(item['usage_summary'], {'scope': 'since_pulse', 'keys': 42})
+        self.assertEqual(self.client.get('/v1/public/status').json()['devices'], [])
+        with patch.object(m.time, 'time', return_value=now + 3):
+            self.assertNotIn('manual_status', self.client.get('/v1/status', headers=self.rh).json()['devices'][0])
+        self.cfg['devices']['phone']['usage_summary'] = False
+        Path(m.CONFIG).write_text(json.dumps(self.cfg))
+        self.assertNotIn('usage_summary', self.client.get('/v1/status', headers=self.rh).json()['devices'][0])
+        self.assertEqual(self.send(2, hidden=True, **data).status_code, 200)
+        self.assertEqual(self.client.get('/v1/status', headers=self.rh).json()['devices'], [])
+
+    def test_desktop_invalid_values_and_stale_statistics(self):
+        self.assertEqual(self.send(resources={'cpu_percent': 101}).status_code, 422)
+        self.assertEqual(self.send(usage_summary={'sampled_at': 0, 'keys': -1}).status_code, 422)
+        self.cfg['devices']['phone']['usage_summary'] = True
+        self.cfg['readers']['viewer']['fields'] += ['usage_summary']
+        Path(m.CONFIG).write_text(json.dumps(self.cfg))
+        self.assertEqual(self.send(usage_summary={'sampled_at': int(time.time())-60, 'keys': 1}).status_code, 200)
+        self.assertEqual(self.client.get('/v1/status', headers=self.rh).json()['devices'], [])
+
+    def test_unknown_media_position_does_not_advance(self):
+        with patch.object(m.time, 'time', return_value=1000000):
+            self.assertEqual(self.send(music={'title': 'Live', 'player': 'player', 'playing': True,
+                             'media_kind': 'video', 'position_known': False, 'position_ms': 1000}).status_code, 200)
+        with patch.object(m.time, 'time', return_value=1000005):
+            music = self.client.get('/v1/status', headers=self.rh).json()['devices'][0]['music']
+            self.assertEqual(music['position_ms'], 1000)
+            self.assertEqual(music['media_kind'], 'video')
+
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         m.DB = str(Path(self.tmp.name)/'test.db')

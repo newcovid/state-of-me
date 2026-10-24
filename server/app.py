@@ -13,7 +13,7 @@ from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-app = FastAPI(title="State of Me", version="0.8.2")
+app = FastAPI(title="State of Me", version="0.10.0")
 DB = os.getenv("SOM_DB", "state.db")
 CONFIG = os.getenv("SOM_CONFIG", "config.json")
 WEB = Path(__file__).parent / "web"
@@ -42,6 +42,8 @@ class LyricWindow(BaseModel):
 
 class Music(BaseModel):
     model_config = ConfigDict(extra="forbid")
+    media_kind: Literal["music", "video", "unknown"] = "music"
+    position_known: bool = True
     title: str = Field(max_length=200)
     artist: str = Field(default="", max_length=200)
     album: str = Field(default="", max_length=200)
@@ -57,8 +59,47 @@ class Music(BaseModel):
     lyric_status: Literal['unavailable', 'synced', 'plain', 'ambiguous', 'unmatched', 'permission_required', 'unsupported'] = 'unavailable'
 
 
+class Presence(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    state: Literal['active', 'idle', 'locked', 'unknown'] = 'unknown'
+    idle_seconds: int | None = Field(default=None, ge=0, le=4294968)
+
+
+class ManualStatus(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    text: str = Field(max_length=120)
+    expires_at: int = Field(ge=0)
+
+
+class Display(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    monitor_count: int | None = Field(default=None, ge=0, le=128)
+    remote_session: bool | None = None
+    fullscreen: bool | None = None
+
+
+class UsageSummary(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    source: Literal['whatpulse'] = 'whatpulse'
+    scope: Literal['since_pulse'] = 'since_pulse'
+    sampled_at: int = Field(ge=0)
+    keys: int | None = Field(default=None, ge=0, le=9007199254740991)
+    clicks: int | None = Field(default=None, ge=0, le=9007199254740991)
+    scrolls: int | None = Field(default=None, ge=0, le=9007199254740991)
+    download: int | None = Field(default=None, ge=0, le=9007199254740991)
+    upload: int | None = Field(default=None, ge=0, le=9007199254740991)
+    uptime: int | None = Field(default=None, ge=0, le=9007199254740991)
+    keys_per_second: float | None = Field(default=None, ge=0, le=1000000, allow_inf_nan=False)
+    clicks_per_second: float | None = Field(default=None, ge=0, le=1000000, allow_inf_nan=False)
+    download_bytes_per_second: float | None = Field(default=None, ge=0, le=1e15, allow_inf_nan=False)
+    upload_bytes_per_second: float | None = Field(default=None, ge=0, le=1e15, allow_inf_nan=False)
+    sample_seconds: float | None = Field(default=None, ge=0, le=120, allow_inf_nan=False)
+
+
 class DeviceState(BaseModel):
     model_config = ConfigDict(extra="forbid")
+    battery_present: bool | None = None
+    ac_connected: bool | None = None
     battery_percent: int | None = Field(default=None, ge=0, le=100)
     charging: bool | None = None
     screen_on: bool | None = None
@@ -79,6 +120,8 @@ class Network(BaseModel):
 
 
 class Audio(BaseModel):
+    default_output_form: Literal["speaker", "headphones", "headset", "line", "digital", "other"] | None = None
+    active_output_sessions: int | None = Field(default=None, ge=0, le=4096)
     model_config = ConfigDict(extra="forbid")
     music_volume_percent: int | None = Field(default=None, ge=0, le=100)
     media_muted: bool | None = None
@@ -94,6 +137,7 @@ class Resources(BaseModel):
     low_memory: bool | None = None
     available_storage_mib: int | None = Field(default=None, ge=0, le=1073741824)
     total_storage_mib: int | None = Field(default=None, ge=0, le=1073741824)
+    cpu_percent: float | None = Field(default=None, ge=0, le=100, allow_inf_nan=False)
     thermal_status: int | None = Field(default=None, ge=0, le=6)
 
 
@@ -113,7 +157,7 @@ class AppDetails(BaseModel):
     active_for_ms: int | None = Field(default=None, ge=0, le=3600000)
 
 
-CONTEXT_FIELDS = ('device_state', 'network', 'audio', 'resources', 'collector_health', 'app_details')
+CONTEXT_FIELDS = ('device_state', 'network', 'audio', 'resources', 'collector_health', 'app_details', 'presence', 'manual_status', 'display', 'usage_summary')
 
 
 class Event(BaseModel):
@@ -129,6 +173,10 @@ class Event(BaseModel):
     resources: Resources | None = None
     collector_health: CollectorHealth | None = None
     app_details: AppDetails | None = None
+    presence: Presence | None = None
+    manual_status: ManualStatus | None = None
+    display: Display | None = None
+    usage_summary: UsageSummary | None = None
 
 
 def active_music(music):
@@ -200,7 +248,7 @@ async def guard(request: Request, call_next):
 def health():
     with db() as conn:
         conn.execute("SELECT 1")
-    return {"ok": True, "version": "0.8.2"}
+    return {"ok": True, "version": "0.10.0"}
 
 
 @app.post("/v1/events")
@@ -264,7 +312,7 @@ def project(cfg, audience):
         if "music" in fields and active_music(music) and permitted(device, "players", music["player"]):
             music = dict(music)
             # Reception time anchors progress without depending on device wall clocks.
-            position = music['position_ms'] + (max(0, now-received)*1000*music.get('playback_rate', 1) if music['playing'] else 0)
+            position = music['position_ms'] + (max(0, now-received)*1000*music.get('playback_rate', 1) if music['playing'] and music.get('position_known', True) else 0)
             music['position_ms'] = int(min(position, music['duration_ms'] or 604800000))
             window = music.get('lyric_window')
             if window:
@@ -283,6 +331,10 @@ def project(cfg, audience):
             if field in fields and device.get(field, False) and data.get(field):
                 if field != 'app_details' or item.get('app'):
                     value = data[field]
+                    if field == 'manual_status' and not now < value.get('expires_at', 0) <= now + 86400:
+                        continue
+                    if field == 'usage_summary' and not -5 <= now - value.get('sampled_at', 0) <= 45:
+                        continue
                     # Audience subfield scopes prevent a broad category leaking diagnostics.
                     if field + '_fields' in audience:
                         value = {k: v for k, v in value.items() if k in audience[field + '_fields']}

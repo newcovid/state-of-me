@@ -27,6 +27,17 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
         api=types.SimpleNamespace(call_action=AsyncMock(return_value=members))
         return types.SimpleNamespace(message_str=text,get_group_id=lambda:'123456',get_platform_name=lambda:'aiocqhttp',get_sender_id=lambda:sender,get_self_id=lambda:'999999',get_messages=lambda:[],bot=types.SimpleNamespace(api=api))
 
+    async def test_desktop_signals_do_not_inventory_diagnostics(self):
+        data = {'devices': [{'device': 'desktop', 'app': 'Editor',
+                'presence': {'state': 'active'}, 'usage_summary': {'keys': 40},
+                'manual_status': {'text': 'Focus'}}]}
+        general = self.m.select_signals(data, '群主在干什么')['devices'][0]
+        self.assertNotIn('usage_summary', general)
+        self.assertNotIn('presence', general)
+        self.assertIn('manual_status', general)
+        detailed = self.m.select_signals(data, 'WhatPulse 按键统计')['devices'][0]
+        self.assertEqual(detailed['usage_summary']['keys'], 40)
+
     async def test_other_self_never_fetches_owner(self):
         with patch('urllib.request.urlopen') as network:
             r=await self.adapter.get_my_status(self.event('我在干什么'))

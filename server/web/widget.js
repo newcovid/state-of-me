@@ -5,6 +5,8 @@
   const music=visible.find(d=>d.music?.playing===true&&[undefined,'unknown','playing'].includes(d.music.playback_status));
   const rows=visible.map(d=>{const state=d.device_state||{},details=[];
    if(Number.isFinite(state.battery_percent))details.push('电量 '+state.battery_percent+'%');
+   if(d.presence?.state==='idle')details.push('电脑暂时空闲');
+   if(d.manual_status?.text)details.push(d.manual_status.text);
    if(state.charging===true)details.push('充电中');if(state.locked===true)details.push('已锁屏');
    return {label:d.device==='phone'?'手机':d.device==='desktop'?'电脑':'设备',app:d.app?(d.app_details?.label||d.app):'',details};
   }).filter(row=>row.app||row.details.length);
@@ -70,7 +72,7 @@
     if(row.details.length){const badges=document.createElement('div');badges.className='badges';for(const value of row.details){const badge=document.createElement('span');badge.className='badge';badge.textContent=value;badges.append(badge);}device.append(badges);}
     this.nodes.summary.append(device);
    }
-   this.text(this.nodes.state,this.music?'此刻在听':view.rows.some(r=>r.app)?'此刻在用':view.rows.length?'设备近况':'暂无动态');
+   this.text(this.nodes.state,this.music?(this.music.media_kind==='video'?'此刻在看':this.music.media_kind==='unknown'?'正在播放':'此刻在听'):view.rows.some(r=>r.app)?'此刻在用':view.rows.length?'设备近况':'暂无动态');
    this.text(this.nodes.title,this.music?.title||'');this.text(this.nodes.artist,this.music?.artist||'');
    this.text(this.nodes.album,this.music?.album?'专辑 · '+this.music.album:'');
    if(!this.music){this.text(this.nodes.line,'');this.text(this.nodes.next,'');this.text(this.nodes.time,'');this.bar.value=0;}
@@ -79,7 +81,7 @@
    this.clamp();
   }
   empty(){this.entries=[];this.render();}
-  frame(){if(!this.isConnected)return;const now=performance.now();if(this.entries?.some(d=>d.until<=now))this.render();const m=this.music;if(m){const pos=Math.min(m.duration_ms||604800000,m.position_ms+(m.playing?(now-this.anchor)*(m.playback_rate??1):0));let line=m.lyric,next='';const w=m.lyric_window;if(w){line=null;if(pos>=w.start_ms&&pos<w.end_ms){for(let i=0;i<w.lines.length;i++){if(w.lines[i].at_ms<=pos){line=w.lines[i].text;next=w.lines[i+1]?.text||'';}else break;}}}this.text(this.nodes.line,line??(m.lyric_status==='plain'?'歌词暂无同步时间轴':'暂无同步歌词'));this.text(this.nodes.next,next);this.bar.max=m.duration_ms||1;this.bar.value=pos;const format=x=>Math.floor(x/60000)+':'+String(Math.floor(x/1000)%60).padStart(2,'0');this.text(this.nodes.time,format(pos)+(m.duration_ms?' / '+format(m.duration_ms)+' · 剩余 '+format(Math.max(0,m.duration_ms-pos)):''));}this.animation=requestAnimationFrame(()=>this.frame());}
+  frame(){if(!this.isConnected)return;const now=performance.now();if(this.entries?.some(d=>d.until<=now))this.render();const m=this.music;if(m){const pos=Math.min(m.duration_ms||604800000,m.position_ms+(m.playing&&m.position_known!==false?(now-this.anchor)*(m.playback_rate??1):0));let line=m.lyric,next='';const w=m.lyric_window;if(w){line=null;if(pos>=w.start_ms&&pos<w.end_ms){for(let i=0;i<w.lines.length;i++){if(w.lines[i].at_ms<=pos){line=w.lines[i].text;next=w.lines[i+1]?.text||'';}else break;}}}this.text(this.nodes.line,line??(m.lyric_status==='plain'?'歌词暂无同步时间轴':'暂无同步歌词'));this.text(this.nodes.next,next);this.bar.max=m.duration_ms||1;this.bar.value=pos;const format=x=>Math.floor(x/60000)+':'+String(Math.floor(x/1000)%60).padStart(2,'0');this.text(this.nodes.time,m.position_known===false?'播放器未提供进度':format(pos)+(m.duration_ms?' / '+format(m.duration_ms)+' · 剩余 '+format(Math.max(0,m.duration_ms-pos)):''));}this.animation=requestAnimationFrame(()=>this.frame());}
   async update(){if(this.busy)return;this.busy=true;const controller=new AbortController();this.abort=controller;const timeout=setTimeout(()=>controller.abort(),8000);try{const url=new URL(this.getAttribute('endpoint')||'/presence/v1/public/status',location.href);if(url.origin!==location.origin)throw Error('same-origin required');const r=await fetch(url,{credentials:'omit',cache:'no-store',signal:controller.signal});if(!r.ok)throw Error('unavailable');const d=await r.json();if(!this.isConnected)return;this.anchor=performance.now();this.fetchedWall=Date.now();this.entries=(d.devices||[]).filter(x=>Number.isFinite(x.expires_in)&&x.expires_in>0).map(x=>({...x,until:this.anchor+x.expires_in*1000}));this.render();}catch(e){this.empty();}finally{clearTimeout(timeout);this.busy=false;}}
  }
  customElements.define('state-of-me-status',Presence);
