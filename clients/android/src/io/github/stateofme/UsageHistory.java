@@ -45,7 +45,11 @@ public final class UsageHistory {
  private static JSONObject snapshot(Context c,boolean filtered)throws Exception{
   SharedPreferences p=c.getSharedPreferences("som",0);JSONArray days=new JSONArray();
   for(Map.Entry<String,UsageLedger.Day> entry:ledger.days.entrySet()){
-   UsageLedger.Day d=entry.getValue();JSONArray apps=new JSONArray(),hours=new JSONArray();for(long hour:d.hours)hours.put(hour);
+   UsageLedger.Day d=entry.getValue();
+   // The initial query window may be longer than the system's retained events.
+   // Omit completely unobserved days instead of presenting them as zero-use days.
+   if(d.known==0&&d.screen==0&&d.unlocks==0&&d.apps.isEmpty())continue;
+   JSONArray apps=new JSONArray(),hours=new JSONArray();for(long hour:d.hours)hours.put(hour);
    List<Map.Entry<String,UsageLedger.App>> ranked=new ArrayList<>(d.apps.entrySet());ranked.sort((a,b)->Long.compare(b.getValue().ms,a.getValue().ms));
    int eligible=0;
    for(Map.Entry<String,UsageLedger.App> a:ranked){
