@@ -26,6 +26,8 @@ dotnet build clients/windows
 
 Android 界面使用 Kotlin/Compose 与 Miuix 0.9.4 组件库，采集和歌词模块保留 Java，通过 Gradle Wrapper 构建。详见[组件与构建说明](docs/ANDROID-UI.md)。APK 使用本地生成的开发预览签名；保留私钥以便后续更新，正式发行需要独立签名流程。
 
+Android 0.9.1 使用事件更新、状态去重与 20 秒保活，并支持失败退避、增量应用查询和歌词窗口提前补充。详见[同步策略与验证](docs/ANDROID-SYNC-0.9.1.md)。
+
 API：`POST /v1/events`、`GET /v1/status`、默认关闭的 `GET /v1/public/status`。机器人和博客都是适配器；机器人停机不影响采集和网页。
 
 MIT License。贡献请附复现步骤和设备版本，不提交令牌、聊天记录、真实活动或私有配置。

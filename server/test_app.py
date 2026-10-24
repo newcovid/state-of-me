@@ -2,12 +2,37 @@ import json
 import tempfile
 import time
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 from fastapi.testclient import TestClient
 from server import app as m
 
 
 class ContractTests(unittest.TestCase):
+    def test_twenty_second_heartbeat_progress_and_expiry(self):
+        self.cfg['ttl_seconds'] = 45
+        self.cfg['readers']['viewer']['fields'] += ['lyric', 'lyric_window']
+        Path(m.CONFIG).write_text(json.dumps(self.cfg))
+        music = {'title': 'Song', 'artist': 'Artist', 'player': 'player',
+                 'playing': True, 'position_ms': 0, 'duration_ms': 180000,
+                 'lyric_status': 'synced', 'playback_rate': 1,
+                 'lyric_window': {'start_ms': 0, 'end_ms': 60000,
+                                  'lines': [{'at_ms': 0, 'text': 'first'},
+                                            {'at_ms': 15000, 'text': 'second'}]}}
+        with patch.object(m.time, 'time', return_value=1000000):
+            self.assertEqual(self.send(music=music).status_code, 200)
+        with patch.object(m.time, 'time', return_value=1000020):
+            item = self.client.get('/v1/status', headers=self.rh).json()['devices'][0]
+            self.assertEqual(item['music']['position_ms'], 20000)
+            self.assertEqual(item['music']['lyric'], 'second')
+            self.assertEqual(item['expires_in'], 25)
+            # A full snapshot without music retracts playback immediately.
+            self.assertEqual(self.send(2, app='editor').status_code, 200)
+            item = self.client.get('/v1/status', headers=self.rh).json()['devices'][0]
+            self.assertNotIn('music', item)
+        with patch.object(m.time, 'time', return_value=1000066):
+            self.assertEqual(self.client.get('/v1/status', headers=self.rh).json()['devices'], [])
+
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         m.DB = str(Path(self.tmp.name)/'test.db')
