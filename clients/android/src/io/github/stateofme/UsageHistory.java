@@ -73,6 +73,9 @@ public final class UsageHistory {
    JSONObject body;
    if(enabled){refresh(c,false);body=snapshot(c,true);}else body=new JSONObject().put("clear",true);
    conn=(HttpURLConnection)new URL(p.getString("url","")+"/v1/usage").openConnection();conn.setConnectTimeout(8000);conn.setReadTimeout(8000);conn.setInstanceFollowRedirects(false);conn.setRequestMethod("POST");conn.setDoOutput(true);conn.setRequestProperty("Content-Type","application/json");conn.setRequestProperty("Authorization","Bearer "+p.getString("token",""));
+   // A timeout can happen after the server accepts the body. Remember the possible
+   // upload before sending, so disabling sharing still retries a server-side clear.
+   if(enabled)p.edit().putBoolean("usage_uploaded",true).commit();
    byte[] bytes=body.toString().getBytes("UTF-8");conn.setFixedLengthStreamingMode(bytes.length);try(OutputStream out=conn.getOutputStream()){out.write(bytes);}
    if(conn.getResponseCode()!=200)throw new IOException("HTTP "+conn.getResponseCode());
    p.edit().putBoolean("usage_uploaded",enabled).putString("usage_sync_status",enabled?"统计已同步；每 15 分钟择机更新":"服务端统计已清除").apply();
