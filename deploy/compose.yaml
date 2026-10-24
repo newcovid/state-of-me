@@ -4,7 +4,7 @@ services:
       context: ..
       dockerfile: deploy/Dockerfile
     restart: unless-stopped
-    ports: ["127.0.0.1:8080:8080"]
+    ports: ["127.0.0.1:${SOM_PORT:-8080}:8080"]
     volumes:
       - ./config.json:/config/config.json:ro
       - ./data:/data
@@ -14,3 +14,9 @@ services:
     security_opt: [no-new-privileges:true]
     mem_limit: 192m
     cpus: 0.5
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s

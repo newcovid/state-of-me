@@ -17,6 +17,8 @@
 
 ## 开始
 
+[下载 Android / Windows 开发预览](https://github.com/newcovid/state-of-me/releases)；已有服务只需安装客户端并连接账号。自行搭建请从下方“安装与测试”开始，可用初始化工具生成配套配置。
+
 [安装与测试](docs/QUICKSTART.md) · [开发计划](docs/PLAN-0.6.md) · [隐私和限制](docs/PRIVACY.md) · [通用性审查](docs/GENERALITY.md) · [歌词窗口协议](docs/PLAYBACK-API.md)
 
 ```powershell

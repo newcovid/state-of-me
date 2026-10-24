@@ -29,7 +29,7 @@ private suspend fun request(server: String, path: String, body: JSONObject, toke
 @Composable fun MainActivity.ConnectionPage() {
     val prefs = remember { getSharedPreferences("som", 0) }
     var connected by remember { mutableStateOf(prefs.getString("token", "").orEmpty().isNotEmpty()) }
-    var server by remember { mutableStateOf(prefs.getString("url", "https://mchaut.top/presence").orEmpty()) }
+    var server by remember { mutableStateOf(prefs.getString("url", "").orEmpty()) }
     var code by remember { mutableStateOf(if (prefs.getLong("pair_expires", 0) > System.currentTimeMillis()) prefs.getString("pair_code", "").orEmpty() else "") }; var secret by remember { mutableStateOf(prefs.getString("pair_secret", "").orEmpty()) }
     var approved by remember { mutableStateOf<JSONObject?>(null) }; var expires by remember { mutableLongStateOf(prefs.getLong("pair_expires", 0)) }
     var busy by remember { mutableStateOf(false) }; var message by remember { mutableStateOf("") }
@@ -52,7 +52,7 @@ private suspend fun request(server: String, path: String, body: JSONObject, toke
         Text(if (connected) "${prefs.getString("url", "")}\n分享由状态页开关控制。" else "在浏览器注册或登录，确认这台设备即可，无需填写密钥。")
     } }
     if (!connected) {
-        TextField(value = server, onValueChange = { if (code.isEmpty()) server = it }, label = "服务地址", singleLine = true, modifier = Modifier.fillMaxWidth())
+        TextField(value = server, onValueChange = { if (code.isEmpty()) server = it }, label = "HTTPS 服务地址", singleLine = true, modifier = Modifier.fillMaxWidth())
         Button(enabled = !busy && approved == null, onClick = { scope.launch {
             if (!server.trim().startsWith("https://")) { message = "请填写 HTTPS 服务地址"; return@launch }
             server = server.trim().trimEnd('/'); busy = true; code = ""; clearPair()

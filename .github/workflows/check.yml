@@ -25,7 +25,7 @@ jobs:
         with:
           python-version: '3.13'
       - run: pip install -r server/requirements.txt httpx
-      - run: python -m unittest server.test_app server.test_accounts integrations.astrbot.test_identity integrations.astrbot.test_adapter -v
+      - run: python -m unittest server.test_app server.test_accounts server.test_bootstrap integrations.astrbot.test_identity integrations.astrbot.test_adapter -v
       - run: node server/test_playback.cjs
       - run: node server/test_widget.cjs
       - uses: actions/setup-java@v4
@@ -53,3 +53,17 @@ jobs:
           dotnet-version: '8.0.x'
       - run: dotnet build clients/windows -c Release
       - run: dotnet run --project tests/windows -c Release
+  clean-install:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          python3 deploy/init_config.py --url https://status.example.com --group 123456789
+          mkdir -p deploy/data
+          sudo chown 10001:10001 deploy/data
+          sudo chown root:10001 deploy/config.json
+          sudo chmod 640 deploy/config.json
+          docker compose -f deploy/compose.yaml up -d --build
+      - run: sudo python3 deploy/smoke_test.py
+      - if: always()
+        run: docker compose -f deploy/compose.yaml down

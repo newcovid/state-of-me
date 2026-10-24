@@ -1,53 +1,146 @@
-# 安装与测试
+# 从零安装 State of Me 0.11
 
-## 服务端
+## 只使用别人已搭好的服务
 
-1. 复制 `server/config.example.json` 到 `deploy/config.json`。给每台设备、每个受众生成不同的高熵令牌，至少 32 随机字节，例如 `python -c "import secrets; print(secrets.token_urlsafe(32))"`。示例占位符不可用于生产。
-2. 配置设备 `apps`、`players` 白名单，歌词默认关闭，需要时设 `lyrics: true`。读者的 `fields` 独立控制 `app`、`music`、`lyric`。两层都允许才能看到。配置文件仅部署账户可读。
-3. 创建数据目录并让 UID 10001 可写：Linux 上 `mkdir -p deploy/data && sudo chown 10001:10001 deploy/data`。
-4. `docker compose -f deploy/compose.yaml up -d --build`，在已有 HTTPS 反向代理后接入 `127.0.0.1:8080`。反向代理限制请求体 16KB。不要开放明文写入端口。
-5. 浏览器打开 HTTPS 地址，输入只读令牌。公开分享保持关闭，明确决定要公开哪些设备/字段后再改 `public`。
+到 [GitHub Releases](https://github.com/newcovid/state-of-me/releases) 选择最新 **0.11 开发预览**：Android 安装 `state-of-me-0.11.0.apk`（Android 8+）；Windows 10/11 x64 下载并解压 `state-of-me-windows-0.11.0-win-x64.zip`，运行 `StateOfMe.exe`，自包含包无需另装 .NET。更新 Windows 前从旧版托盘正常退出，再运行新版本。
 
-也可设置 `SOM_DB`、`SOM_CONFIG`，运行 `uvicorn server.app:app --host 127.0.0.1 --port 8080 --no-access-log`。本版没有设备管理 UI，编辑配置即可撤销令牌、修改白名单或 enabled；下一请求即生效。
+向维护者索取 HTTPS 服务地址，在客户端“连接”页填写后点“连接账号 / 注册”，按浏览器提示注册、保存恢复码、核对设备，再返回客户端确认账号。先选择应用/播放器和可选信息，再开始分享。具体 QQ 绑定和权限操作见 [多用户使用说明](MULTIUSER-0.11.md)。客户端默认不填写服务器；现有安装保留原地址与连接。
 
-## Android
+## 自建服务：Linux + Docker Compose
 
-安装 APK 后，在连接页填写 HTTPS 地址和手机专用写入令牌，点击保存连接。在分享页点击应用或播放器，搜索名称并多选，选择白名单、黑名单或不分享，再保存。默认白名单为空时不分享；旧版本选择自动保留。黑名单只覆盖保存时列表中的应用，新应用需重新打开列表并保存。完整应用列表仅保存在手机，不上传。
+前提：Git、Python 3、Docker Engine 和 Compose 插件；域名已解析到服务器，HTTPS 代理可访问 80/443。以下命令从仓库根目录执行。推荐首先使用独立域名，QQ 和博客均可稍后接入。
 
-在“所需权限”中按需授权音乐通知访问和应用使用情况，然后首页开始分享。界面开关自动保存，应用选择保存后下次同步生效。服务端仍有独立限制：默认 `apps_mode` / `players_mode` 为 `whitelist`，使用原有 apps/players 列表。管理员可设 `blacklist`，使用 `apps_blocked` / `players_blocked` 排除列表；`off` 禁止该类。最终可见范围为客户端和服务器规则交集。不要用空白名单表示允许全部。
+```sh
+git clone https://github.com/newcovid/state-of-me.git
+cd state-of-me
+python3 deploy/init_config.py --url https://status.example.com
+```
 
-允许常驻通知；ROM 省电策略可能停止后台服务，需在系统设置允许后台运行。没有自动开机启动。
+**将示例 URL 替换为自己的地址。** 已有 QQ 群时可添加 `--group 123456789`，多个群重复该参数。工具会生成：
 
-点击“授权音乐目录并索引内嵌歌词”，通过 Android 系统目录选择器选音乐目录。只授予读取权限，不需要 Root。等待索引完成，播放目录中的歌曲；按标题、歌手、专辑（播放器提供时）、时长±2秒匹配，多个匹配文件会拒绝选取。更改音乐库后重新索引。撤销按钮会释放目录权限并清除索引。
+- `deploy/config.json`：启用账号注册，静态设备/读者为空，公开默认关闭，自动填写正确 `origin`。
+- 指定群时另生成 `deploy/astrbot-state-of-me.json`：与后端配套的独立机器人服务凭据。无需手工复制或生成群密钥。
 
-支持 MP3 ID3v2.3/v2.4 USLT、毫秒制 SYLT；FLAC Vorbis LYRICS/UNSYNCEDLYRICS/SYNCEDLYRICS；M4A/MP4 ©lyr。无时间轴只报告 plain，不发送完整歌词。少数压缩/全局 unsynchronization/extended-header ID3、其他封装尚不支持；不声称全部标签等价于 TagLib。原始 AAC 无标签时不能提取歌词。
+工具拒绝覆盖已有配置。旧部署请阅读迁移说明，不能直接重初始化。生成文件不应提交 Git；工具只输出文件路径，不打印凭据。
 
-歌词页选择音乐文件夹一次，自动索引内嵌歌词；添加歌曲后刷新音乐库。0.8 移除了单文件 LRC 与手填歌名流程，旧手动配置不再读取。逐字格式暂不支持。
+让非 root 容器可以读取配置和写数据库：
+
+```sh
+mkdir -p deploy/data
+sudo chown 10001:10001 deploy/data
+sudo chown root:10001 deploy/config.json
+sudo chmod 640 deploy/config.json
+docker compose -f deploy/compose.yaml up -d --build
+docker compose -f deploy/compose.yaml ps
+curl --fail http://127.0.0.1:8080/health
+```
+
+应返回 `ok: true` 与版本号，容器随后显示 healthy。端口默认只绑定宿主机回环地址。8080 被占用时使用 `SOM_PORT=18080 docker compose -f deploy/compose.yaml up -d --build`，并同步修改代理目标。
+
+### HTTPS：代理直接运行在宿主机
+
+Caddy 独立域名示例（替换域名）：
+
+```caddyfile
+status.example.com {
+    request_body {
+        max_size 16KB
+    }
+    reverse_proxy 127.0.0.1:8080
+}
+```
+
+若已有站点且要放在 `/presence/`，初始化时 URL 应为 `https://example.com/presence`，在该站点现有 Caddy 配置中加入以下路由。`handle_path` 会剥离 `/presence` 前缀：
+
+```caddyfile
+redir /presence /presence/ 308
+handle_path /presence/* {
+    request_body {
+        max_size 16KB
+    }
+    reverse_proxy 127.0.0.1:8080
+}
+```
+
+后端没有硬编码部署前缀。客户端、AstrBot `url` 必须包含你实际使用的 `/presence`；`accounts.origin` 只包含 `https://example.com`，初始化工具已自动处理。不要缓存账号、配对或状态响应。
+
+**如果 Caddy 本身在容器里**，`127.0.0.1` 是代理容器自己。请将代理和 State of Me 加入同一个 Docker 网络，代理到 `state-of-me:8080`，而非照抄宿主机目标。不要把明文写入端口直接开放到公网。
+
+### 第一次验收
+
+1. 打开 `https://status.example.com/account`（子路径则 `/presence/account`），注册第一个账号。应无需手填任何设备令牌。
+2. 客户端短码配对，网页及客户端均核对账号。完成后默认暂停。
+3. 选择至少一个应用或播放器并开始分享，账号页“刷新状态”应显示自己的设备。
+4. 新账号的公开链接应返回未开启公开；显式开启后才可查看。
+5. 第二个账号应看不到第一个账号的设备。网页撤销设备后，该客户端提示连接失效。
+
+无 QQ 群时注册、设备和公开页面完全可用；账号页会说明暂未开放群绑定。
+
+## Android 权限与歌词
+
+应用和播放器都可按名称多选、白名单/黑名单或关闭。默认白名单为空，因此刚连接成功还不会分享应用和音乐。黑名单范围基于保存时读取的应用列表，安装新应用后重新打开列表保存。
+
+“分享 → 所需权限”仅对未授权且需要的功能显示操作按钮；音乐通知访问、应用使用情况是 Android 特殊权限，需要进入系统页选择 State of Me。返回后自动显示已授权。运行通知支持系统权限弹窗，无法再次弹窗时引导系统设置。已授权项不会重复要求授权。厂商省电策略仍可能终止后台，必要时由用户在系统设置允许后台运行；无需 Root，无自动开机启动。
+
+歌词页选择整个音乐文件夹，一次授予读取权限，本机索引内嵌歌词，音乐原文件不上传。支持 MP3 USLT/毫秒 SYLT、FLAC Vorbis 歌词、M4A ©lyr；严格匹配标题、歌手、专辑（若提供）、时长。同名重复歌曲不猜测，纯文本不伪造时间轴。音乐目录授权失效时会提示重新选择。
 
 ## Windows
 
-运行发行包 `StateOfMe.exe`，需要 .NET 8 Desktop Runtime；填写 HTTPS 地址、电脑写入令牌和进程允许列表，点击开始。名称不含 `.exe`，服务端需使用相同大小写名称。凭据不落盘，每次启动重新填写。窗口需保持运行，暂无托盘和自启动。
+短码连接后在分享页选择应用，在媒体页选择播放器。可选托盘常驻、登录 Windows 时启动、活跃/空闲、电源、网络、声音、资源、屏幕和 WhatPulse。WhatPulse 未安装或 API 未启用不会阻止其他采集；仅开启该项时访问 `127.0.0.1` 的配置端口。凭据使用 Windows 当前用户 DPAPI 保存，不要求每次启动重新输入。
 
-## AstrBot
+关闭窗口保留托盘运行；托盘“退出”会停止并清空分享。详细能力见 [桌面端说明](DESKTOP-0.10.md)，当前连接步骤以本页为准。
 
-复制 `integrations/astrbot` 为插件目录 `state_of_me`。在 AstrBot 数据目录放置仅服务账户可读的 `state-of-me.json`：
+## AstrBot：可选 QQ 接入
+
+本版支持 **aiocqhttp / OneBot QQ 平台**。先使 AstrBot 与 QQ 适配器正常收发消息，再复制 `integrations/astrbot` 到 AstrBot 的插件目录，文件夹名为 `state_of_me`。
+
+初始化时指定 `--group` 后，把生成的 `deploy/astrbot-state-of-me.json` 复制到 AstrBot 实际数据目录，命名为 `state-of-me.json`；只让 AstrBot 服务账户读取。插件默认读取容器路径 `/AstrBot/data/state-of-me.json`。非默认安装路径通过 AstrBot 进程环境变量 `SOM_ADAPTER_CONFIG=/实际路径/state-of-me.json` 指定。宿主机路径与容器内路径不要混用。
+
+配套配置的结构如下，**SAME_SECRET 两处必须相同；不要使用字面占位符部署**。初始化工具已代你完成：
+
+后端 `config.json` 中：
 
 ```json
-{"url":"https://presence.example.com","groups":{"YOUR_GROUP_ID":{"token":"GROUP_READ_ONLY_TOKEN","owner_qq":"OWNER_QQ","owner_aliases":[]}}}
+"accounts": {
+  "registration": true,
+  "max_users": 100,
+  "origin": "https://status.example.com",
+  "bot_groups": {"123456789": {"token": "SAME_SECRET"}}
+}
 ```
 
-将 OWNER_QQ 替换为实际设备主人的数字 QQ 号，只放私有配置。“我”按当前事件发送者解析；“群主”实时查成员列表的 owner；支持真实 @、QQ 号及明确配置的主人别名。指代不清或多目标会要求明确，不用模型猜测。插件按群注入可信身份说明，不污染其他群人格。
+AstrBot `state-of-me.json`：
 
-重载插件，在目标群人格工具列表添加 `get_my_status`。工具通过真实事件取得群号，不接受模型指定群号。不会主动发送 QQ 消息；QQ 适配器需已登录在线。
+```json
+{
+  "url": "https://status.example.com",
+  "groups": {
+    "123456789": {"multiuser": true, "bot_token": "SAME_SECRET"}
+  }
+}
+```
 
-## 首次验收
+纯多用户部署不需要 `owner_qq`。重载插件；若人格使用工具白名单，在目标群人格启用 `get_my_status`。真实“我”、@对象和群主由插件/QQ API 解析。群友在账号页生成 `/状态绑定 XXXXXXXX`，在相应群发送，再回网页核对真实 QQ 和群号并确认。若机器人配置了唤醒限制，发送命令时同时 @机器人。
 
-- 播放 Poweramp，网页出现曲名、歌手和播放状态；暂停、拖动、换曲更新。
-- 开启允许应用，网页可见；切换不允许应用、锁屏或暂停后旧应用被移除。
-- 手机音乐和电脑应用同时出现，互不覆盖。
-- 授权音乐目录；给网页读者增加 lyric_window 字段权限（同时保留 music、lyric），检查缓存换句、暂停、前后拖动和换曲。更新 APK 后重新开启采集。
-- 暂停分享，网页清空该设备；断网/关闭进程，45 秒后过期。
-- 无令牌查询、读令牌写入、设备令牌读状态均应失败；公开接口默认 404。
-- 群内询问主人状态，答案来自工具；离线应说明无法确认，不猜测。
+添加或移除群需同步维护两份私有配置。不要把机器人服务凭据提供给群友；他们只需要一次性绑定码。其他平台尚需另做身份适配。
 
-这是功能闭环测试，不等于已通过长时间耗电、全部 ROM 或应用商店审核。
+## 博客与升级维护
+
+Halo 或其他博客见 [完整组件嵌入示例](../integrations/halo/README.md)，可以只展示指定账号已经公开的状态。
+
+升级前备份配置和数据库。小型部署可选择短暂停机备份，保证 SQLite 一致性：
+
+```sh
+backup="som-backup-$(date +%Y%m%d-%H%M%S)"
+mkdir -m 700 "$backup"
+docker compose -f deploy/compose.yaml stop state-of-me
+sudo cp -a deploy/config.json deploy/data "$backup/"
+# 如已接入机器人，另行私密备份 AstrBot 的 state-of-me.json。
+git pull --ff-only
+docker compose -f deploy/compose.yaml up -d --build
+curl --fail http://127.0.0.1:8080/health
+```
+
+需要不中断采集时，改用 SQLite online backup API，不要只复制正在写入的 `state.db` 而遗漏 WAL。回滚前保留升级后新增账号的数据；不能无检查覆盖成旧数据库。
+
+这是开发预览：不含邮箱/OAuth、自助删号、管理后台、Linux/macOS 采集器，也未完成所有手机厂商的权限与耗电测试。

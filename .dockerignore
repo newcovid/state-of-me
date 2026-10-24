@@ -1,0 +1,9 @@
+**
+!server/
+!server/**
+!deploy/
+!deploy/Dockerfile
+server/**/__pycache__/
+server/test*
+server/config*.json
+server/*.db*

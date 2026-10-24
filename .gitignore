@@ -17,3 +17,5 @@ security/
 deploy/config.json
 deploy/data/
 .gradle/
+
+deploy/astrbot-state-of-me.json
