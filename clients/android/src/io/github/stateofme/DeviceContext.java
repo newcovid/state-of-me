@@ -38,7 +38,7 @@ final class DeviceContext {
      StatFs disk=new StatFs(c.getFilesDir().getAbsolutePath());value.put("available_storage_mib",disk.getAvailableBytes()/1048576).put("total_storage_mib",disk.getTotalBytes()/1048576);
      if(Build.VERSION.SDK_INT>=29)value.put("thermal_status",c.getSystemService(PowerManager.class).getCurrentThermalStatus());
     } else {
-     value.put("version","0.8.1").put("sdk",Build.VERSION.SDK_INT).put("music_directory_access",MusicLibrary.hasReadPermission(c));
+     value.put("version","0.9.0").put("sdk",Build.VERSION.SDK_INT).put("music_directory_access",MusicLibrary.hasReadPermission(c));
      String listeners=Settings.Secure.getString(c.getContentResolver(),"enabled_notification_listeners");boolean notification=false;
      if(listeners!=null)for(String s:listeners.split(":")){ComponentName component=ComponentName.unflattenFromString(s);if(component!=null&&component.equals(new ComponentName(c,MediaAccess.class)))notification=true;}
      value.put("notification_access",notification);

@@ -16,3 +16,4 @@ local.properties
 security/
 deploy/config.json
 deploy/data/
+.gradle/

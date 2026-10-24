@@ -20,11 +20,11 @@ python -m pip install -r server/requirements.txt
 python -m pip install httpx
 python -m unittest server.test_app -v
 dotnet build clients/windows
-# 设置 ANDROID_HOME，需要 platform 35 / build-tools 36.0.0
+# 设置 JAVA_HOME（JDK 21）和 ANDROID_HOME，需要 platform 37.0 / build-tools 37.0.0
 ./clients/android/build.ps1
 ```
 
-Android 使用无外部库的原生 Java，JDK/Android SDK 可直接构建，不依赖 Gradle。APK 使用本地生成的开发预览签名；保留私钥以便后续更新，正式发行需要独立签名流程。
+Android 界面使用 Kotlin/Compose 与 Miuix 0.9.4 组件库，采集和歌词模块保留 Java，通过 Gradle Wrapper 构建。详见[组件与构建说明](docs/ANDROID-UI.md)。APK 使用本地生成的开发预览签名；保留私钥以便后续更新，正式发行需要独立签名流程。
 
 API：`POST /v1/events`、`GET /v1/status`、默认关闭的 `GET /v1/public/status`。机器人和博客都是适配器；机器人停机不影响采集和网页。
 
