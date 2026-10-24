@@ -16,7 +16,7 @@ The scope is current personal device/activity state, not every datum Android can
 ## Contract and consent
 
 New optional event objects: `network`, `audio`, `resources`, `collector_health`, `app_details`.
-Each needs its Android sharing switch **and** the matching boolean under `devices.<id>` **and** the matching name in `readers.<audience>.fields` (or public.fields).
+Each requires its Android sharing switch. The account owns the paired device; group and public projections only include the fields authorized by that account.
 Defaults are off. `app_details` additionally requires a permitted `app` and the audience's `app` field.
 `device_state` gains optional fields; `music.playback_status` is additive. Older clients continue to work.
 The Pydantic schemas in server/app.py are the exact bounded wire contract. Units are in field names.

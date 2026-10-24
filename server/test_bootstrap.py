@@ -14,7 +14,7 @@ class BootstrapTests(unittest.TestCase):
         server, bot = configurations('https://status.example.com/presence/', ['123456789'])
         self.assertEqual(server['accounts']['origin'], 'https://status.example.com')
         self.assertEqual(bot['url'], 'https://status.example.com/presence')
-        self.assertEqual(server['devices'], {});self.assertEqual(server['readers'], {})
+        self.assertNotIn('devices', server);self.assertNotIn('readers', server)
         self.assertEqual(server['accounts']['bot_groups']['123456789']['token'],bot['groups']['123456789']['bot_token'])
         with tempfile.TemporaryDirectory() as tmp:
             old=m.DB,m.CONFIG

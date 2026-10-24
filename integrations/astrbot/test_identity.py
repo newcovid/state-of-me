@@ -4,7 +4,7 @@ from .identity import resolve_subject
 
 class IdentityTests(unittest.TestCase):
     def resolve(self, text, sender='111111', mentions=()):
-        return resolve_subject(text,sender,'222222',mentions,['站长'])
+        return resolve_subject(text,sender,mentions)
     def test_self_is_sender(self):
         self.assertEqual(self.resolve('我在干什么')[0],'111111')
         self.assertEqual(self.resolve('我正在听什么','222222')[0],'222222')
@@ -13,7 +13,7 @@ class IdentityTests(unittest.TestCase):
     def test_explicit(self):
         self.assertEqual(self.resolve('他在干什么',mentions=['333333'])[0],'333333')
         self.assertEqual(self.resolve('222222在听什么')[0],'222222')
-        self.assertEqual(self.resolve('站长在干什么')[0],'222222')
+        self.assertIsNotNone(self.resolve('站长在干什么')[1])
     def test_ambiguous(self):
         self.assertIsNotNone(self.resolve('他呢')[1])
         self.assertIsNotNone(self.resolve('我和群主在干什么')[1])

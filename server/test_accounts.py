@@ -13,7 +13,7 @@ class AccountTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.old = m.DB, m.CONFIG
         m.DB = str(Path(self.tmp.name)/'db'); m.CONFIG = str(Path(self.tmp.name)/'config.json')
-        self.cfg = {'devices': {'phone': {'token':'l'*32,'apps':['legacy']}}, 'readers': {'legacy': {'token':'r'*32,'devices':['phone'],'fields':['app']}}, 'public': {'enabled':False}, 'accounts': {'registration':True, 'origin':'https://testserver', 'bot_groups': {'123456': {'token':'s'*32, 'reader':'legacy', 'legacy_owner_qq':'222222'}, '654321': {'token':'t'*32}}}}
+        self.cfg = {'accounts': {'registration':True, 'origin':'https://testserver', 'bot_groups': {'123456': {'token':'s'*32}, '654321': {'token':'t'*32}}}}
         Path(m.CONFIG).write_text(json.dumps(self.cfg))
         self.x = TestClient(m.app, base_url='https://testserver', headers={'X-SOM-CSRF':'1'})
         self.y = TestClient(m.app, base_url='https://testserver', headers={'X-SOM-CSRF':'1'})
@@ -43,8 +43,13 @@ class AccountTests(unittest.TestCase):
         self.assertEqual(self.x.get('/v1/public/users/alice').status_code,404)
         self.x.post('/v1/accounts/public',json={'enabled':True}).raise_for_status()
         self.assertEqual([d['app'] for d in self.y.get('/v1/public/users/alice').json()['devices']],['alice-app'])
-        legacy=self.x.get('/v1/status',headers={'Authorization':'Bearer '+'r'*32}).json()['devices']
-        self.assertEqual(legacy,[])
+        self.assertEqual(self.x.get('/v1/status',headers={'Authorization':'Bearer '+'r'*32}).status_code,404)
+
+    def test_account_styles_follow_content_security_policy(self):
+        page = self.x.get('/account')
+        self.assertIn("style-src 'self'", page.headers['content-security-policy'])
+        self.assertNotIn('<style', page.text)
+        self.assertIn('.account-page .next-step', self.x.get('/style.css').text)
     def test_pair_secret_account_and_revocation(self):
         p=self.x.post('/v1/pairings',json={'label':'Laptop','platform':'windows'}).json()
         self.assertEqual(self.x.post('/v1/pairings/approve',json={'code':p['code'],'account':'bob'}).status_code,409)
@@ -90,10 +95,12 @@ class AccountTests(unittest.TestCase):
         p=self.x.post('/v1/pairings',json={'label':'Phone','platform':'android'}).json()
         with a.connection() as c:c.execute('UPDATE pairings SET expires=0')
         self.assertEqual(self.x.post('/v1/pairings/approve',json={'code':p['code'],'account':'alice'}).status_code,404)
-    def test_unbinding_migrated_owner_never_restores_legacy(self):
-        self.x.post('/v1/events',headers={'Authorization':'Bearer '+'l'*32},json={'seq':1,'observed_at':int(time.time()),'app':'legacy'}).raise_for_status()
+    def test_static_credentials_rejected_and_unbind_revokes_access(self):
+        self.cfg['devices'] = {'phone': {'token':'l'*32, 'apps':['editor']}}
+        Path(m.CONFIG).write_text(json.dumps(self.cfg))
+        self.assertEqual(self.x.post('/v1/events',headers={'Authorization':'Bearer '+'l'*32},json={'seq':1,'observed_at':int(time.time()),'app':'editor'}).status_code,401)
         url='/v1/bot/status/222222?group_id=123456'
-        self.assertEqual(self.x.get(url,headers=self.bot).json()['devices'][0]['app'],'legacy')
+        self.assertEqual(self.x.get(url,headers=self.bot).json()['status'],'unbound')
         self.bind(self.x,'222222')
         self.x.post('/v1/accounts/qq/unbind',json={}).raise_for_status()
         self.assertEqual(self.x.get(url,headers=self.bot).json()['status'],'unbound')

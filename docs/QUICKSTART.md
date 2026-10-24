@@ -1,10 +1,10 @@
-# 从零安装 State of Me 0.11
+# 从零安装 State of Me 0.12
 
 ## 只使用别人已搭好的服务
 
-到 [GitHub Releases](https://github.com/newcovid/state-of-me/releases) 选择最新 **0.11 开发预览**：Android 安装 `state-of-me-0.11.0.apk`（Android 8+）；Windows 10/11 x64 下载并解压 `state-of-me-windows-0.11.0-win-x64.zip`，运行 `StateOfMe.exe`，自包含包无需另装 .NET。更新 Windows 前从旧版托盘正常退出，再运行新版本。
+到 [GitHub Releases](https://github.com/newcovid/state-of-me/releases) 选择最新 **0.12 开发预览**：Android 安装 `state-of-me-0.12.0.apk`（Android 8+）；Windows 10/11 x64 下载并解压 `state-of-me-windows-0.12.0-win-x64.zip`，运行 `StateOfMe.exe`，自包含包无需另装 .NET。更新 Windows 前从旧版托盘正常退出，再运行新版本。
 
-向维护者索取 HTTPS 服务地址，在客户端“连接”页填写后点“连接账号 / 注册”，按浏览器提示注册、保存恢复码、核对设备，再返回客户端确认账号。先选择应用/播放器和可选信息，再开始分享。具体 QQ 绑定和权限操作见 [多用户使用说明](MULTIUSER-0.11.md)。客户端默认不填写服务器；现有安装保留原地址与连接。
+向维护者索取 HTTPS 服务地址，在客户端“连接”页填写后点“连接账号 / 注册”，按浏览器提示注册、保存恢复码、核对设备，再返回客户端确认账号。先选择应用/播放器和可选信息，再开始分享。具体 QQ 绑定和权限操作见 [多用户使用说明](MULTIUSER-0.12.md)。客户端默认不填写服务器；现有安装保留原地址与连接。
 
 ## 自建服务：Linux + Docker Compose
 
@@ -21,7 +21,7 @@ python3 deploy/init_config.py --url https://status.example.com
 - `deploy/config.json`：启用账号注册，静态设备/读者为空，公开默认关闭，自动填写正确 `origin`。
 - 指定群时另生成 `deploy/astrbot-state-of-me.json`：与后端配套的独立机器人服务凭据。无需手工复制或生成群密钥。
 
-工具拒绝覆盖已有配置。旧部署请阅读迁移说明，不能直接重初始化。生成文件不应提交 Git；工具只输出文件路径，不打印凭据。
+工具拒绝覆盖已有配置。已有实例应保留账号数据库与配置，不要重初始化。生成文件不应提交 Git；工具只输出文件路径，不打印凭据。
 
 让非 root 容器可以读取配置和写数据库：
 
@@ -117,12 +117,12 @@ AstrBot `state-of-me.json`：
 {
   "url": "https://status.example.com",
   "groups": {
-    "123456789": {"multiuser": true, "bot_token": "SAME_SECRET"}
+    "123456789": {"bot_token": "SAME_SECRET"}
   }
 }
 ```
 
-纯多用户部署不需要 `owner_qq`。重载插件；若人格使用工具白名单，在目标群人格启用 `get_my_status`。真实“我”、@对象和群主由插件/QQ API 解析。群友在账号页生成 `/状态绑定 XXXXXXXX`，在相应群发送，再回网页核对真实 QQ 和群号并确认。若机器人配置了唤醒限制，发送命令时同时 @机器人。
+重载插件；若人格使用工具白名单，在目标群人格启用 `get_my_status`。真实“我”、@对象和群主由插件/QQ API 解析。群友在账号页生成 `/状态绑定 XXXXXXXX`，在相应群发送，再回网页核对真实 QQ 和群号并确认。若机器人配置了唤醒限制，发送命令时同时 @机器人。
 
 添加或移除群需同步维护两份私有配置。不要把机器人服务凭据提供给群友；他们只需要一次性绑定码。其他平台尚需另做身份适配。
 

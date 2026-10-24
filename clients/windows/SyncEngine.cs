@@ -134,9 +134,9 @@ public sealed class SyncEngine : IDisposable
                 Preview = new JsonObject { ["hidden"] = true };
             }
             Updated?.Invoke();
-            if (string.IsNullOrWhiteSpace(cfg.Endpoint) || cfg.Token.Length < 24)
+            if (string.IsNullOrWhiteSpace(cfg.Endpoint) || cfg.Token.Length < 24 || string.IsNullOrWhiteSpace(cfg.Account))
             {
-                Status = "请在连接页保存有效地址和令牌";
+                Status = "请在连接页连接账号";
                 return;
             }
             var key = Fingerprint(data);

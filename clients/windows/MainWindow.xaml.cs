@@ -30,7 +30,6 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         InitializeComponent();
         SystemThemeWatcher.Watch(this);
         Endpoint.Text = settings.Endpoint;
-        Token.Password = settings.Token;
         ConnectionView();
         FilterMode.SelectedIndex = settings.AppMode == "off" ? 0 : settings.AppMode == "blacklist" ? 2 : 1;
         SharePresence.IsChecked = settings.Presence;
@@ -47,15 +46,6 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         Manual.Text = settings.ManualUntil > DateTimeOffset.UtcNow.ToUnixTimeSeconds() ? settings.ManualText : "";
         directory = settings.MusicDirectory;
         DirectoryLabel.Text = directory;
-        var args = Environment.GetCommandLineArgs();
-        if (args.Length == 3 && args[1] == "--config")
-            try
-            {
-                var cfg = JsonDocument.Parse(File.ReadAllText(args[2]));
-                Endpoint.Text = cfg.RootElement.GetProperty("url").GetString() ?? "";
-                Token.Password = cfg.RootElement.GetProperty("token").GetString() ?? "";
-            }
-            catch { }
         foreach (var id in settings.Apps)
             apps.Add(new()
             {
@@ -112,12 +102,11 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
     string pairUrl = "";
     void ConnectionView()
     {
-        bool connected = settings.Token.Length >= 24;
-        AccountLabel.Text = settings.ConnectionInvalid ? "连接已失效，请断开后重新连接" : connected ? "✓ 已连接 · " + (settings.Account.Length > 0 ? settings.Account : "原有设备连接") : "在浏览器注册或登录，确认这台电脑即可，无需填写密钥。";
+        bool connected = settings.Token.Length >= 24 && !string.IsNullOrWhiteSpace(settings.Account);
+        AccountLabel.Text = settings.ConnectionInvalid ? "连接已失效，请断开后重新连接" : connected ? "✓ 已连接 · " + settings.Account : "在浏览器注册或登录，确认这台电脑即可，无需填写密钥。";
         ConnectButton.IsEnabled = !connected;
         DisconnectButton.IsEnabled = connected;
         Endpoint.IsReadOnly = connected;
-        Token.IsEnabled = !connected;
     }
     static void Browser(string url) => System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true });
     void ManageAccount(object sender, RoutedEventArgs e)
@@ -158,6 +147,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
                 catch (HttpRequestException) { PairStatus.Text = "连接暂时中断，将自动重试。连接码：" + code; continue; }
                 if (result.GetProperty("status").GetString() != "approved") continue;
                 var name = result.GetProperty("account").GetString()!; var token = result.GetProperty("token").GetString()!;
+                if (string.IsNullOrWhiteSpace(name) || token.Length < 24) throw new InvalidOperationException("Invalid pairing response");
                 Open();
                 if (System.Windows.MessageBox.Show(this, "服务：" + endpoint + "\n账号：" + name + "\n确认这是你的账号？连接后需要选择分享内容，再手动开始分享。", "确认连接账号", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
                 {
@@ -165,7 +155,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
                     PairStatus.Text = "已取消连接，没有上传状态。"; return;
                 }
                 settings.ConnectionInvalid = false; settings.Account = name; settings.Endpoint = endpoint; settings.Token = token; settings.Enabled = false; settings.Save();
-                Token.Password = token; PairStatus.Text = "连接成功。请选择分享内容，再点击保存并开始分享。"; return;
+                PairStatus.Text = "连接成功。请选择分享内容，再点击保存并开始分享。"; return;
             }
             PairStatus.Text = "连接码已过期，请重新连接账号。";
         }
@@ -182,7 +172,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         catch { PairStatus.Text = "本机已断开，服务器暂不可达。旧状态到期后会消失，请在账号页移除此设备。"; }
         var clean = new Settings { Endpoint = settings.Endpoint, AutoStart = settings.AutoStart };
         foreach (var property in typeof(Settings).GetProperties().Where(x => x.CanWrite)) property.SetValue(settings, property.GetValue(clean));
-        settings.Save(); Token.Password = ""; apps.Clear(); players.Clear(); Manual.Text = ""; directory = ""; DirectoryLabel.Text = ""; FilterMode.SelectedIndex = 1; PreferredPlayer.ItemsSource = null;
+        settings.Save(); apps.Clear(); players.Clear(); Manual.Text = ""; directory = ""; DirectoryLabel.Text = ""; FilterMode.SelectedIndex = 1; PreferredPlayer.ItemsSource = null;
         foreach (var check in new[] { SharePresence, ShareDevice, ShareNetwork, ShareAudio, ShareResources, ShareDisplay, ShareWhatPulse, ShareMusic }) check.IsChecked = false;
         await engine.Configure(settings); ConnectionView();
     }
@@ -201,16 +191,15 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
     }
     async void Save(object sender, RoutedEventArgs e)
     {
-        if (!Uri.TryCreate(Endpoint.Text.Trim(), UriKind.Absolute, out var u) || u.Scheme != "https" || !string.IsNullOrEmpty(u.UserInfo) || Token.Password.Length < 24)
+        if (!Uri.TryCreate(Endpoint.Text.Trim(), UriKind.Absolute, out var u) || u.Scheme != "https" || !string.IsNullOrEmpty(u.UserInfo) || settings.Token.Length < 24 || string.IsNullOrWhiteSpace(settings.Account))
         {
-            StatusText.Text = "请填写 HTTPS 服务地址和有效写入令牌";
+            StatusText.Text = "请先在连接页连接账号";
             return;
         }
-        if (settings.Token.Length >= 24 && (settings.Token != Token.Password || settings.Endpoint != Endpoint.Text.Trim().TrimEnd('/')))
+        if (settings.Token.Length >= 24 && settings.Endpoint != Endpoint.Text.Trim().TrimEnd('/'))
         { StatusText.Text = "请先断开旧设备，再更换账号或服务地址"; return; }
         hideTimer?.Cancel();
         settings.Endpoint = Endpoint.Text.Trim().TrimEnd('/');
-        settings.Token = Token.Password;
         settings.AppMode = FilterMode.SelectedIndex switch
         {
             0 => "off",
@@ -339,23 +328,10 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         directory = "";
         DirectoryLabel.Text = "未选择音乐目录";
     }
-    async void AudiencePreview(object sender, RoutedEventArgs e)
+    void AudiencePreview(object sender, RoutedEventArgs e)
     {
-        if (settings.Account.Length > 0) { ManageAccount(sender, e); return; }
-        try
-        {
-            if (!Uri.TryCreate(Endpoint.Text.Trim(), UriKind.Absolute, out var address) || address.Scheme != "https" || !string.IsNullOrEmpty(address.UserInfo))
-                throw new InvalidOperationException();
-            using var http = new HttpClient(new HttpClientHandler { AllowAutoRedirect = false }) { Timeout = TimeSpan.FromSeconds(8) };
-            using var req = new HttpRequestMessage(HttpMethod.Get, Endpoint.Text.TrimEnd('/') + (ReadToken.Password.Length > 0 ? "/v1/status" : "/v1/public/status"));
-            if (ReadToken.Password.Length > 0)
-                req.Headers.Authorization = new("Bearer", ReadToken.Password);
-            using var response = await http.SendAsync(req);
-            response.EnsureSuccessStatusCode();
-            var text = await response.Content.ReadAsStringAsync();
-            var window = new Window { Title = "受众可见内容", Width = 600, Height = 480, Owner = this, Content = new TextBox { Text = JsonSerializer.Serialize(JsonDocument.Parse(text), new JsonSerializerOptions { WriteIndented = true, Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping }), IsReadOnly = true, TextWrapping = TextWrapping.Wrap, VerticalScrollBarVisibility = ScrollBarVisibility.Auto } };
-            window.ShowDialog();
-        }
-        catch { StatusText.Text = "无法读取受众预览，请检查地址与只读权限"; }
+        if (string.IsNullOrWhiteSpace(settings.Account) || settings.Token.Length < 24)
+        { StatusText.Text = "请先连接账号，再查看受众预览"; return; }
+        ManageAccount(sender, e);
     }
 }

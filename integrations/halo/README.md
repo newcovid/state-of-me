@@ -1,13 +1,13 @@
-# Halo / 博客浮动状态组件（0.11）
+# Halo / 博客浮动状态组件（0.12）
 
 在 Halo Console → 系统设置 → 代码注入 → 页脚，添加以下完整片段。先在账号页开启所需账号的公开分享，把 `alice` 换成实际账号名：
 
 ```html
 <state-of-me-status endpoint="/presence/v1/public/users/alice"></state-of-me-status>
-<script defer src="/presence/widget.js?v=0.11.0"></script>
+<script defer src="/presence/widget.js?v=0.12.0"></script>
 ```
 
-`endpoint` 必须写在 `state-of-me-status` 元素上，不能写在 script 上。元素先存在，脚本就会复用它；只放 script 会自动创建默认组件，读取 `/presence/v1/public/status`（旧站点范围，不聚合新注册账号）。
+`endpoint` 必须写在 `state-of-me-status` 元素上，不能写在 script 上。必须同时添加元素与脚本，并为元素填写具体账号的公开地址。
 
 每个博客域名必须把同源 `/presence/*` 去掉 `/presence` 前缀后代理到 State of Me。跨域 URL 被组件主动拒绝，因此不能只把脚本 URL 改成另一域名；同源代理配置见 [快速入门](../../docs/QUICKSTART.md)。组件不发送凭据或 Cookie。只通过公开接口取数，不要往网页填任何设备、只读或机器人密钥。
 

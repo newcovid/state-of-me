@@ -1,6 +1,6 @@
 # 播放与歌词窗口协议（0.3）
 
-现有 `/v1/events`、`/v1/status`、`/v1/public/status` 路径保持兼容。旧采集端可以继续只传当前句，新客户端应先升级服务端。
+写入使用 `/v1/events`；账号读取使用 `/v1/accounts/status`，群读取使用 `/v1/bot/status/{qq}`，公开读取使用 `/v1/public/users/{name}`。歌词权限随账号的授权范围校验。
 
 音乐对象新增可选字段：
 

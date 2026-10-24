@@ -1,5 +1,4 @@
 """Tenant accounts, short-lived pairing and confirmed QQ bindings.
-Legacy config credentials remain separate; no account is implicitly assigned them.
 """
 import hashlib
 import hmac
@@ -25,10 +24,9 @@ CREATE TABLE IF NOT EXISTS pairings(code TEXT PRIMARY KEY, secret_hash TEXT NOT 
 CREATE TABLE IF NOT EXISTS qq_bindings(qq TEXT PRIMARY KEY, uid TEXT UNIQUE NOT NULL);
 CREATE TABLE IF NOT EXISTS group_grants(uid TEXT NOT NULL, group_id TEXT NOT NULL, fields TEXT NOT NULL, PRIMARY KEY(uid, group_id));
 CREATE TABLE IF NOT EXISTS bind_codes(code_hash TEXT PRIMARY KEY, uid TEXT NOT NULL, group_id TEXT NOT NULL, expires REAL NOT NULL, candidate TEXT);
-CREATE TABLE IF NOT EXISTS retired_legacy(qq TEXT PRIMARY KEY);
 CREATE TABLE IF NOT EXISTS auth_limits(bucket TEXT PRIMARY KEY, count INTEGER NOT NULL, expires REAL NOT NULL);
 '''
-_db = _config = _project = _static_auth = None
+_db = _config = _project = _authenticate = None
 
 def digest(value):
     return hashlib.sha256(value.encode()).hexdigest()
@@ -99,6 +97,7 @@ def audience(uid, fields=None):
     return result
 
 def enrich(cfg):
+    cfg['devices'] = {}
     with connection() as c:
         for identifier, uid, label, token, platform in c.execute('SELECT * FROM user_devices'):
             if token:
@@ -149,13 +148,13 @@ def bot_authorize(request, group_id):
     group = cfg.get('accounts', {}).get('bot_groups', {}).get(group_id)
     if not group or not group.get('token'):
         raise HTTPException(403, '本群尚未接入多用户状态服务')
-    _static_auth(request.headers.get('authorization'), {group_id: {'token': group['token']}})
+    _authenticate(request.headers.get('authorization'), {group_id: {'token_hash': digest(group['token'])}})
     return cfg, group
 
 
-def install(app, db, config, project, static_auth, web):
-    global _db, _config, _project, _static_auth
-    _db, _config, _project, _static_auth = db, config, project, static_auth
+def install(app, db, config, project, authenticate, web):
+    global _db, _config, _project, _authenticate
+    _db, _config, _project, _authenticate = db, config, project, authenticate
 
     @app.get('/account')
     def page():
@@ -356,7 +355,6 @@ def install(app, db, config, project, static_auth, web):
                 c.execute('INSERT INTO qq_bindings VALUES(?,?) ON CONFLICT(qq) DO NOTHING', (row[1], uid))
                 if c.execute('SELECT uid FROM qq_bindings WHERE qq=?', (row[1],)).fetchone()[0] != uid:
                     raise HTTPException(409, '此 QQ 已绑定其他账号')
-                c.execute('INSERT OR IGNORE INTO retired_legacy VALUES(?)', (row[1],))
                 c.execute('INSERT OR REPLACE INTO group_grants VALUES(?,?,?)', (uid, row[0], json.dumps(BASE_FIELDS)))
                 c.execute('DELETE FROM bind_codes WHERE code_hash=?', (body.id,))
             except sqlite3.IntegrityError:
@@ -390,8 +388,6 @@ def install(app, db, config, project, static_auth, web):
                 if not grant:
                     return {'status': 'not_shared', 'devices': []}
                 scope = audience(row[0], json.loads(grant[0]))
-            elif qq == str(group.get('legacy_owner_qq', '')) and not c.execute('SELECT 1 FROM retired_legacy WHERE qq=?', (qq,)).fetchone():
-                scope = cfg['readers'][group['reader']]
             else:
                 return {'status': 'unbound', 'devices': []}
         return project(enrich(cfg), scope)

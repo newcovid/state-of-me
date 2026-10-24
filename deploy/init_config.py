@@ -1,4 +1,4 @@
-"""Initialize a new multi-user instance without legacy placeholder credentials."""
+"""Initialize a new multi-user instance with account-based device pairing."""
 import argparse
 import json
 import os
@@ -19,8 +19,8 @@ def configurations(url, groups=()):
     for group in groups:
         token = secrets.token_urlsafe(48)
         server_groups[group] = {'token': token}
-        bot_groups[group] = {'multiuser': True, 'bot_token': token}
-    server = {'ttl_seconds': 45, 'devices': {}, 'readers': {}, 'public': {'enabled': False},
+        bot_groups[group] = {'bot_token': token}
+    server = {'ttl_seconds': 45,
               'accounts': {'registration': True, 'max_users': 100, 'origin': parsed.scheme+'://'+parsed.netloc, 'bot_groups': server_groups}}
     return server, {'url': endpoint, 'groups': bot_groups}
 

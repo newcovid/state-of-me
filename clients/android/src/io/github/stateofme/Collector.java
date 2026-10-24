@@ -175,6 +175,7 @@ public class Collector extends Service {
     if(lines==null||lines.length()<=1){payloadMusic.remove("lyric_window");break;}
     JSONObject removed=lines.getJSONObject(lines.length()-1);lines.remove(lines.length()-1);w.put("end_ms",removed.getLong("at_ms"));
    }
+   if(prefs.getString("account","").trim().isEmpty()||prefs.getString("token","").length()<24){prefs.edit().putBoolean("enabled",false).putString("status","请先连接账号").apply();return;}
    String base=prefs.getString("url","");if(!base.startsWith("https://"))throw new IOException("HTTPS required");
    HttpURLConnection conn=(HttpURLConnection)new URL(base+"/v1/events").openConnection();int code;
    try{

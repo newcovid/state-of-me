@@ -20,7 +20,7 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
         with patch.dict(sys.modules,{'astrbot.api.event':event_module,'astrbot.api.star':star_module}):
             spec=importlib.util.spec_from_file_location('integrations.astrbot.adapter_test_subject',__file__.replace('test_adapter.py','main.py'))
             self.m=importlib.util.module_from_spec(spec);spec.loader.exec_module(self.m)
-        self.m.configuration=lambda:{'url':'https://example.com','groups':{'123456':{'owner_qq':'222222','token':'x'*32}}}
+        self.m.configuration=lambda:{'url':'https://example.com','groups':{'123456':{'bot_token':'x'*32}}}
         self.adapter=object.__new__(self.m.StateOfMe)
 
     def event(self,text,sender='111111',members=None):
@@ -28,7 +28,7 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
         return types.SimpleNamespace(message_str=text,get_group_id=lambda:'123456',get_platform_name=lambda:'aiocqhttp',get_sender_id=lambda:sender,get_self_id=lambda:'999999',get_messages=lambda:[],bot=types.SimpleNamespace(api=api))
 
     async def test_multiuser_reads_actual_sender_and_preserves_denial(self):
-        self.m.configuration=lambda:{'url':'https://example.com','groups':{'123456':{'multiuser':True,'bot_token':'b'*32}}}
+        self.m.configuration=lambda:{'url':'https://example.com','groups':{'123456':{'bot_token':'b'*32}}}
         with patch('urllib.request.urlopen',return_value=io.BytesIO(b'{"status":"not_shared","devices":[]}')) as network:
             result=json.loads(await self.adapter.get_my_status(self.event('我在干什么')))
             self.assertEqual(result['subject_qq'],'111111');self.assertEqual(result['status'],'not_shared')
@@ -36,7 +36,7 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(network.call_args.args[0].get_header('Authorization'),'Bearer '+'b'*32)
 
     async def test_binding_uses_real_sender_and_stops_llm(self):
-        self.m.configuration=lambda:{'url':'https://example.com','groups':{'123456':{'multiuser':True,'bot_token':'b'*32}}}
+        self.m.configuration=lambda:{'url':'https://example.com','groups':{'123456':{'bot_token':'b'*32}}}
         event=self.event('/状态绑定 ABCD2345')
         event.stop_event=__import__('unittest.mock',fromlist=['Mock']).Mock()
         event.plain_result=lambda text:text
@@ -58,9 +58,9 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(detailed['usage_summary']['keys'], 40)
 
     async def test_other_self_never_fetches_owner(self):
-        with patch('urllib.request.urlopen') as network:
+        with patch('urllib.request.urlopen',return_value=io.BytesIO(b'{"status":"unbound","devices":[]}')) as network:
             r=await self.adapter.get_my_status(self.event('我在干什么'))
-            self.assertEqual(json.loads(r)['status'],'unbound');network.assert_not_called()
+            self.assertEqual(json.loads(r)['status'],'unbound');self.assertIn('/status/111111?',network.call_args.args[0].full_url)
 
     async def test_live_owner_and_subject(self):
         event=self.event('群主在干什么',members=[{'user_id':222222,'role':'owner'}])
@@ -71,8 +71,9 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_transferred_owner_and_api_failure(self):
         e=self.event('群主在干什么',members=[{'user_id':333333,'role':'owner'}])
-        with patch('urllib.request.urlopen') as network:
-            r=await self.adapter.get_my_status(e);self.assertEqual(json.loads(r)['subject_qq'],'333333');network.assert_not_called()
+        with patch('urllib.request.urlopen',return_value=io.BytesIO(b'{"status":"unbound","devices":[]}')) as network:
+            r=await self.adapter.get_my_status(e);self.assertEqual(json.loads(r)['subject_qq'],'333333');self.assertIn('/status/333333?',network.call_args.args[0].full_url)
+            network.reset_mock()
             e.bot.api.call_action.side_effect=RuntimeError('offline')
             r=await self.adapter.get_my_status(e);self.assertIn('不能确认',r);network.assert_not_called()
 

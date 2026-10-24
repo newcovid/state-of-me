@@ -10,7 +10,7 @@
 
 窗口关闭后留在托盘继续运行。暂停分享会清空当前状态；“断开此设备”会停止分享并清除旧账号的本地采集选择、手动状态和歌词目录索引，音乐文件保留。
 
-可选 WhatPulse 仅使用本机 API，不安装或不开启该项也可以正常使用。长期凭据使用 Windows 当前用户 DPAPI 保存。旧版令牌在高级连接区域继续兼容。
+可选 WhatPulse 仅使用本机 API，不安装或不开启该项也可以正常使用。长期凭据使用 Windows 当前用户 DPAPI 保存。设备连接仅通过账号确认和短期配对码建立。
 
 完整说明：[快速入门](https://github.com/newcovid/state-of-me/blob/main/docs/QUICKSTART.md) · [多用户与隐私范围](https://github.com/newcovid/state-of-me/blob/main/docs/MULTIUSER-0.11.md) · [开源项目](https://github.com/newcovid/state-of-me)
 

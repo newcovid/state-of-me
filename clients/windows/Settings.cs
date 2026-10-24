@@ -64,7 +64,13 @@ public sealed class Settings
     {
         try
         {
-            return JsonSerializer.Deserialize<Settings>(File.ReadAllText(FilePath)) ?? new();
+            var settings = JsonSerializer.Deserialize<Settings>(File.ReadAllText(FilePath)) ?? new();
+            if (string.IsNullOrWhiteSpace(settings.Account))
+            {
+                settings.ProtectedToken = "";
+                settings.Enabled = false;
+            }
+            return settings;
         }
         catch { return new(); }
     }

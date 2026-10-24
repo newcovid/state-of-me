@@ -13,7 +13,7 @@ from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-app = FastAPI(title="State of Me", version="0.11.0")
+app = FastAPI(title="State of Me", version="0.12.0")
 DB = os.getenv("SOM_DB", "state.db")
 CONFIG = os.getenv("SOM_CONFIG", "config.json")
 WEB = Path(__file__).parent / "web"
@@ -221,8 +221,8 @@ def authenticate(authorization, entries):
     if len(token) < 24:
         raise HTTPException(401, "Invalid credential")
     for identifier, entry in entries.items():
-        candidate = hashlib.sha256(token.encode()).hexdigest() if entry.get('token_hash') else token
-        expected = entry.get('token_hash') or entry.get('token', '')
+        candidate = hashlib.sha256(token.encode()).hexdigest()
+        expected = entry.get('token_hash', '')
         if entry.get('enabled', True) and hmac.compare_digest(candidate, expected):
             return identifier, entry
     raise HTTPException(401, "Invalid credential")
@@ -254,7 +254,7 @@ async def guard(request: Request, call_next):
 def health():
     with db() as conn:
         conn.execute("SELECT 1")
-    return {"ok": True, "version": "0.11.0"}
+    return {"ok": True, "version": "0.12.0"}
 
 
 @app.post("/v1/events")
@@ -351,22 +351,6 @@ def project(cfg, audience):
         if any(item.get(field) for field in ('app', 'music', *CONTEXT_FIELDS)):
             result.append(item)
     return {"status": "available" if result else "unavailable", "devices": result, "refresh_seconds": 5, "server_time": now}
-
-
-@app.get("/v1/status")
-def status(authorization: str | None = Header(default=None)):
-    cfg = config()
-    _, audience = authenticate(authorization, cfg["readers"])
-    return project(cfg, audience)
-
-
-@app.get("/v1/public/status")
-def public_status():
-    cfg = config()
-    audience = cfg.get("public", {})
-    if not audience.get("enabled", False):
-        raise HTTPException(404, "Public sharing disabled")
-    return project(cfg, audience)
 
 
 @app.get("/")

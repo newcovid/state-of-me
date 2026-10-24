@@ -9,7 +9,6 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.*
 import org.json.JSONObject
 import top.yukonga.miuix.kmp.basic.*
-import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.window.WindowDialog
 
 private suspend fun request(server: String, path: String, body: JSONObject, token: String = ""): JSONObject = withContext(Dispatchers.IO) {
@@ -28,12 +27,12 @@ private suspend fun request(server: String, path: String, body: JSONObject, toke
 
 @Composable fun MainActivity.ConnectionPage() {
     val prefs = remember { getSharedPreferences("som", 0) }
-    var connected by remember { mutableStateOf(prefs.getString("token", "").orEmpty().isNotEmpty()) }
+    var connected by remember { mutableStateOf(prefs.getString("token", "").orEmpty().length >= 24 && !prefs.getString("account", "").isNullOrBlank()) }
     var server by remember { mutableStateOf(prefs.getString("url", "").orEmpty()) }
     var code by remember { mutableStateOf(if (prefs.getLong("pair_expires", 0) > System.currentTimeMillis()) prefs.getString("pair_code", "").orEmpty() else "") }; var secret by remember { mutableStateOf(prefs.getString("pair_secret", "").orEmpty()) }
     var approved by remember { mutableStateOf<JSONObject?>(null) }; var expires by remember { mutableLongStateOf(prefs.getLong("pair_expires", 0)) }
     var busy by remember { mutableStateOf(false) }; var message by remember { mutableStateOf("") }
-    var disconnect by remember { mutableStateOf(false) }; var advanced by remember { mutableStateOf(false) }; var legacy by remember { mutableStateOf("") }
+    var disconnect by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     fun clearPair() { prefs.edit().remove("pair_code").remove("pair_secret").remove("pair_expires").apply() }
     fun browser() { try { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(server.trimEnd('/') + "/account" + if (code.isNotEmpty()) "?pair=$code" else ""))) } catch (_: Exception) { message = "请用浏览器打开服务地址下的 /account 页面" } }
@@ -42,13 +41,13 @@ private suspend fun request(server: String, path: String, body: JSONObject, toke
             delay(3000)
             try {
                 val result = request(server, "/v1/pairings/poll", JSONObject().put("code", code).put("secret", secret))
-                if (result.optString("status") == "approved") { approved = result; message = "请核对账号，再完成连接" }
+                if (result.optString("status") == "approved" && result.optString("account").isNotBlank() && result.optString("token").length >= 24) { approved = result; message = "请核对账号，再完成连接" }
             } catch (e: CancellationException) { throw e } catch (_: Exception) { message = "连接暂时中断，将自动重试；也可重新生成连接码" }
         }
         if (code.isNotEmpty() && approved == null) { code = ""; secret = ""; clearPair(); message = "连接码已过期，请重新连接" }
     }
     Card(modifier = Modifier.fillMaxWidth()) { Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text(if (connected && prefs.getBoolean("connection_invalid", false)) "连接已失效，请断开后重新连接" else if (connected) "✓ 已连接 · " + prefs.getString("account", "原有设备连接") else "连接你的账号")
+        Text(if (connected && prefs.getBoolean("connection_invalid", false)) "连接已失效，请断开后重新连接" else if (connected) "✓ 已连接 · " + prefs.getString("account", "") else "连接你的账号")
         Text(if (connected) "${prefs.getString("url", "")}\n分享由状态页开关控制。" else "在浏览器注册或登录，确认这台设备即可，无需填写密钥。")
     } }
     if (!connected) {
@@ -66,7 +65,7 @@ private suspend fun request(server: String, path: String, body: JSONObject, toke
             Text("确认连接账号：${result.getString("account")}")
             Text("仅在这是你的账号时确认。连接后先选择分享内容，再手动开始分享。")
             Button(enabled = !busy, onClick = {
-                prefs.edit().putString("url", server).putString("token", result.getString("token")).putString("account", result.getString("account")).putBoolean("enabled", false).apply()
+                prefs.edit().remove("connection_invalid").putString("url", server).putString("token", result.getString("token")).putString("account", result.getString("account")).putBoolean("enabled", false).apply()
                 approved = null; code = ""; secret = ""; clearPair(); connected = true; message = "连接成功！请在分享页选择内容，在状态页开始分享。"
             }, colors = ButtonDefaults.buttonColorsPrimary()) { Text("这是我的账号，完成连接") }
             Button(enabled = !busy, onClick = { scope.launch {
@@ -74,11 +73,6 @@ private suspend fun request(server: String, path: String, body: JSONObject, toke
                 try { request(server, "/v1/device/disconnect", JSONObject(), result.getString("token")) } catch (_: Exception) { }
                 approved = null; code = ""; secret = ""; clearPair(); busy = false; message = "已取消，可重新连接。没有上传任何状态。"
             } }) { Text("不是我的账号，取消") }
-        }
-        ArrowPreference("高级：已有设备令牌", summary = "供自建服务或旧版迁移使用", onClick = { advanced = !advanced })
-        if (advanced) {
-            TextField(value = legacy, onValueChange = { legacy = it }, label = "设备令牌", visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(), singleLine = true)
-            Button(onClick = { if (server.startsWith("https://") && legacy.trim().length >= 24) { prefs.edit().putString("url", server.trimEnd('/')).putString("token", legacy.trim()).remove("account").remove("connection_invalid").putBoolean("enabled", false).apply(); legacy = ""; approved = null; code = ""; secret = ""; clearPair(); connected = true } else message = "请填写有效的 HTTPS 地址和令牌" }) { Text("保存旧版连接") }
         }
     } else {
         Button(onClick = { server = prefs.getString("url", "").orEmpty(); browser() }, modifier = Modifier.fillMaxWidth()) { Text("管理账号、QQ 绑定与公开范围") }
@@ -92,7 +86,7 @@ private suspend fun request(server: String, path: String, body: JSONObject, toke
                 busy = true; prefs.edit().putBoolean("enabled", false).apply(); stopService(Intent(this@ConnectionPage, Collector::class.java))
                 try { request(prefs.getString("url", "").orEmpty(), "/v1/device/disconnect", JSONObject(), prefs.getString("token", "").orEmpty()); message = "已断开连接" }
                 catch (_: Exception) { message = "本机已断开。服务端暂不可达，旧状态会到期消失；请在账号页移除此设备。" }
-                MusicLibrary.clear(this@ConnectionPage); prefs.edit().clear().apply(); legacy = ""; approved = null; code = ""; secret = ""; clearPair(); connected = false; disconnect = false; busy = false
+                MusicLibrary.clear(this@ConnectionPage); prefs.edit().clear().apply(); approved = null; code = ""; secret = ""; clearPair(); connected = false; disconnect = false; busy = false
             } }) { Text(if (busy) "正在断开…" else "断开并清除") }
         }
     }

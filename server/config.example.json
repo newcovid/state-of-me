@@ -1,74 +1,7 @@
 {
   "ttl_seconds": 45,
-  "devices": {
-    "phone": {
-      "token": "REPLACE_WITH_RANDOM_DEVICE_TOKEN",
-      "apps": [],
-      "players": [
-        "com.maxmpz.audioplayer"
-      ],
-      "lyrics": false,
-      "device_state": false,
-      "network": false,
-      "audio": false,
-      "resources": false,
-      "collector_health": false,
-      "app_details": false
-    },
-    "desktop": {
-      "token": "REPLACE_WITH_DIFFERENT_DEVICE_TOKEN",
-      "apps": [
-        "Code",
-        "notepad"
-      ],
-      "players": [],
-      "network": false,
-      "audio": false,
-      "resources": false,
-      "collector_health": false,
-      "app_details": false,
-      "lyrics": false,
-      "device_state": false,
-      "presence": false,
-      "manual_status": false,
-      "display": false,
-      "usage_summary": false
-    }
-  },
-  "readers": {
-    "owner": {
-      "token": "REPLACE_WITH_RANDOM_READ_ONLY_TOKEN",
-      "devices": [
-        "phone",
-        "desktop"
-      ],
-      "fields": [
-        "app",
-        "music",
-        "lyric",
-        "lyric_window",
-        "device_state"
-      ]
-    },
-    "group": {
-      "token": "REPLACE_WITH_GROUP_READ_ONLY_TOKEN",
-      "devices": [
-        "phone",
-        "desktop"
-      ],
-      "fields": [
-        "app",
-        "music"
-      ]
-    }
-  },
-  "public": {
-    "enabled": false,
-    "devices": [],
-    "fields": []
-  },
   "accounts": {
-    "registration": false,
+    "registration": true,
     "max_users": 100,
     "origin": "https://example.com",
     "bot_groups": {}

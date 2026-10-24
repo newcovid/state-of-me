@@ -47,8 +47,9 @@ class MainActivity : ComponentActivity() {
     private val notifications = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted -> revision++; toast(if (granted) "通知已授权" else "通知未授权，可稍后在权限页开启") }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState); prefs.registerOnSharedPreferenceChangeListener(listener); enableEdgeToEdge()
+        if (value("account").isBlank()) prefs.edit().remove("token").putBoolean("enabled", false).apply()
         // Package replacement stops services. Reopen resumes only an existing user opt-in.
-        if (prefs.getBoolean("enabled", false) && value("url").startsWith("https://") && value("token").length >= 24) {
+        if (prefs.getBoolean("enabled", false) && value("url").startsWith("https://") && value("token").length >= 24 && value("account").isNotBlank()) {
             startForegroundService(Intent(this, Collector::class.java))
         }
         setContent { MiuixTheme(colors = if (isSystemInDarkTheme()) darkColorScheme() else lightColorScheme()) { App() } }
@@ -71,7 +72,7 @@ class MainActivity : ComponentActivity() {
                         } }
                         Button(onClick = {
                             val enabled = prefs.getBoolean("enabled", false)
-                            if (!enabled && (!value("url").startsWith("https://") || value("token").length < 24)) { page = 3; toast("请先保存服务连接") }
+                            if (!enabled && (!value("url").startsWith("https://") || value("token").length < 24 || value("account").isBlank())) { page = 3; toast("请先连接账号") }
                             else {
                                 prefs.edit().putBoolean("enabled", !enabled).apply()
                                 if (!enabled && android.os.Build.VERSION.SDK_INT >= 33 && !notificationGranted() && !prefs.getBoolean("notification_requested", false)) requestNotifications()

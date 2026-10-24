@@ -44,7 +44,7 @@ def configuration():
         return json.load(f)
 
 
-@register("state_of_me", "State of Me contributors", "Read identity-bound personal presence", "0.11.0")
+@register("state_of_me", "State of Me contributors", "Read identity-bound personal presence", "0.12.0")
 class StateOfMe(Star):
     def __init__(self, context: Context):
         super().__init__(context)
@@ -56,7 +56,7 @@ class StateOfMe(Star):
         cfg = configuration()
         group = str(event.get_group_id())
         binding = cfg.get('groups', {}).get(group, {})
-        if event.get_platform_name() != 'aiocqhttp' or not binding.get('multiuser'):
+        if event.get_platform_name() != 'aiocqhttp' or not binding.get('bot_token'):
             yield event.plain_result('本群尚未开放账号绑定。')
             return
         if not re.fullmatch(r'[A-Za-z2-9]{8}', code):
@@ -83,11 +83,10 @@ class StateOfMe(Star):
             return
         try:
             binding = configuration()['groups'].get(str(event.get_group_id()))
-            if not binding or not (binding.get('multiuser') or binding.get('owner_qq')):
+            if not binding or not binding.get('bot_token'):
                 return
             req.system_prompt = (req.system_prompt or '') + (
-                '\n状态服务支持各群成员独立绑定账号。兼容设备主人 QQ 为 ' + str(binding.get('owner_qq', '未设置')) +
-                '，当前发言者 QQ 为 ' + str(event.get_sender_id()) +
+                '\n状态服务支持各群成员独立绑定账号。当前发言者 QQ 为 ' + str(event.get_sender_id()) +
                 '。询问应用、歌曲、当前活动、电量、网络、音量、存储、热状态、电脑活跃、手动状态、WhatPulse 统计或采集权限时调用 get_my_status。此工具根据真实消息识别人称；'
                 '群主身份由 QQ 接口实时校验。严格按工具返回的 subject_qq 归属状态，'
                 '未绑定、歧义、无权限、离线不能用主人的状态代替。'
@@ -99,20 +98,18 @@ class StateOfMe(Star):
 
     @filter.llm_tool(name="get_my_status")
     async def get_my_status(self, event: AstrMessageEvent) -> str:
-        '''查询当前消息明确询问的人的设备状态。自动解析我、群主、设备主人、真实@或QQ号；未绑定他人绝不返回主人的状态。'''
+        '''查询当前消息明确询问的人的设备状态。自动解析我、群主、真实@或QQ号；未绑定他人绝不返回主人的状态。'''
         try:
             cfg = configuration()
             group = str(event.get_group_id())
             if event.get_platform_name() != 'aiocqhttp' or group not in cfg['groups']:
                 return '当前会话未授权查看状态。'
             binding = cfg['groups'][group]
-            owner = str(binding.get('owner_qq', ''))
-            if not owner.isdigit() and not binding.get('multiuser'):
-                return '设备主人身份尚未配置，不能确定状态归属。'
+            if not binding.get('bot_token'):
+                return '本群尚未接入状态服务。'
             mentions = [str(x.qq) for x in event.get_messages()
                         if type(x).__name__ == 'At' and str(x.qq) != str(event.get_self_id())]
-            subject, error = resolve_subject(event.message_str, str(event.get_sender_id()), owner,
-                                             mentions, binding.get('owner_aliases', []))
+            subject, error = resolve_subject(event.message_str, str(event.get_sender_id()), mentions)
             if error:
                 return error
             if subject == 'group_owner':
@@ -123,13 +120,11 @@ class StateOfMe(Star):
                 if len(owners) != 1:
                     return '无法确认本群群主身份，本次不返回设备状态。'
                 subject = owners[0]
-            if subject != owner and not binding.get('multiuser'):
-                return json.dumps({'subject_qq': subject, 'status': 'unbound', 'detail': '此人没有绑定状态设备；不能返回其他人的状态。'}, ensure_ascii=False)
             if not cfg['url'].startswith('https://'):
                 return '服务配置错误。'
             def read():
-                path = '/v1/bot/status/'+subject+'?group_id='+group if binding.get('multiuser') else '/v1/status'
-                token = binding['bot_token'] if binding.get('multiuser') else binding['token']
+                path = '/v1/bot/status/'+subject+'?group_id='+group
+                token = binding['bot_token']
                 req = urllib.request.Request(cfg['url'].rstrip('/')+path, headers={'Authorization':'Bearer '+token})
                 with urllib.request.urlopen(req, timeout=8) as r:
                     return json.loads(r.read(32768))

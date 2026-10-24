@@ -38,7 +38,7 @@ def main():
                 raise
             time.sleep(1)
     config = json.loads(Path('deploy/config.json').read_text())
-    assert config['devices'] == {} and config['readers'] == {}
+    assert 'devices' not in config and 'readers' not in config
     request('/v1/accounts/register', {'name': 'smoke-user', 'password': 'disposable-test-password'})
     assert not request('/v1/accounts/me')['public']
     p = request('/v1/pairings', {'label': 'Disposable smoke device', 'platform': 'android'})
