@@ -50,3 +50,14 @@ Check(audienceDraft != null && audienceDraft.Revision == 4, "dirty audience reta
 Check(audienceDraft!.Fields.SetEquals(new[] { "music.title", "music.lyric" }), "draft preserves selected fields across other audience refresh");
 Check(ScopeDraft.Capture(new[] { "music.title" }, new[] { "music.title" }, 8) == null, "clean audience may accept refreshed revision");
 Console.WriteLine("Audience draft preservation and revision ownership tests passed");
+
+var emptyPresentation = new Settings();
+Check(ClientPresentation.CollectionSummary(emptyPresentation).Contains("尚未选择"), "empty collection guides user to choose data");
+emptyPresentation.AppMode = "blacklist";
+Check(ClientPresentation.CollectionSummary(emptyPresentation).Contains("排除 0 项"), "empty blacklist accurately means all foreground applications");
+emptyPresentation.WhatPulse = true;
+Check(ClientPresentation.Statistics(emptyPresentation, null).Contains("已暂停"), "paused WhatPulse does not ask user to enable again");
+emptyPresentation.Enabled = true;
+Check(ClientPresentation.Statistics(emptyPresentation, null).Contains("连接状态"), "enabled empty WhatPulse points to connection diagnostics");
+Check(!ClientPresentation.Statistics(emptyPresentation, first).Contains("since_pulse"), "WhatPulse scope uses readable user language");
+Console.WriteLine("Windows onboarding and statistics presentation tests passed");

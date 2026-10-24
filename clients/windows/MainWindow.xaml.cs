@@ -43,7 +43,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         IdleMinutes.Value = settings.IdleMinutes;
         Manual.Text = settings.ManualUntil > DateTimeOffset.UtcNow.ToUnixTimeSeconds() ? settings.ManualText : "";
         directory = settings.MusicDirectory;
-        DirectoryLabel.Text = directory;
+        DirectoryLabel.Text = directory.Length == 0 ? "未选择音乐目录（可选）" : directory;
         foreach (var id in settings.Apps)
             apps.Add(new()
             {
@@ -64,7 +64,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         engine = new(settings, Dispatcher);
         engine.Updated += UpdateView;
         var configuredToken = settings.Token; var configuredEndpoint = settings.Endpoint;
-        account = new AccountWorkspace(this, settings, async () => { if (configuredToken != settings.Token || configuredEndpoint != settings.Endpoint) { await engine.Configure(settings); configuredToken = settings.Token; configuredEndpoint = settings.Endpoint; } ConnectionView(); UpdateView(); }, () => ShowPage("Settings"));
+        account = new AccountWorkspace(this, settings, async () => { if (configuredToken != settings.Token || configuredEndpoint != settings.Endpoint) { await engine.Configure(settings); configuredToken = settings.Token; configuredEndpoint = settings.Endpoint; } ConnectionView(); UpdateView(); }, () => ShowPage("Settings"), () => ShowPage("Collection"));
         account.StateChanged += () => { ConnectionView(); UpdateView(); };
         AccountHost.Content = account.SettingsContent; SharingPage.Content = account.SharingContent; ConnectionView(); ShowPage("Overview");
         IsVisibleChanged += (_, _) => { if (IsVisible) UpdateView(); };
@@ -114,6 +114,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         SharingNav.IsActive = page == "Sharing"; SettingsNav.IsActive = page == "Settings";
         PageTitle.Text = page switch { "Collection" => "采集", "Sharing" => "分享", "Settings" => "设置", _ => "概览" };
     }
+    void OpenCollection(object sender, RoutedEventArgs e) => ShowPage("Collection");
     void ConnectionView()
     {
         bool connected = settings.Token.Length >= 24 && !string.IsNullOrWhiteSpace(settings.Account);
@@ -160,8 +161,9 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         var media = engine.Preview["music"];
         MediaSummary.Text = media?["playing"]?.GetValue<bool>() == true ? "正在播放：" + (media["title"]?.ToString() ?? "媒体") + (media["artist"] == null ? "" : " · " + media["artist"]) : "";
         MediaSummary.Visibility = MediaSummary.Text.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
+        CollectionSummary.Text = ClientPresentation.CollectionSummary(settings);
         var stats = engine.Preview["usage_summary"];
-        Statistics.Text = stats == null ? "当前没有 WhatPulse 统计。可在采集页启用并配置本地 API。" : "WhatPulse 累计：按键 " + (stats["keys"]?.ToString() ?? "未提供") + "，点击 " + (stats["clicks"]?.ToString() ?? "未提供") + "。统计范围：" + (stats["scope"]?.ToString() ?? "未提供") + "；累计量不等于今日用量。";
+        Statistics.Text = ClientPresentation.Statistics(settings, stats);
         PulseStatus.Text = engine.WhatPulseStatus;
         LyricsStatus.Text = directory != settings.MusicDirectory ? "所选目录尚未保存；保存采集设置后自动索引。" : engine.LyricStatus;
     }
@@ -177,7 +179,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         draft.Apps = apps.Where(x => x.Selected).Select(x => x.Id).ToList();
         draft.AppAliases = apps.Where(x => !string.IsNullOrWhiteSpace(x.Alias)).ToDictionary(x => x.Id, x => x.Alias.Trim());
         draft.Players = players.Where(x => x.Selected).Select(x => x.Id).ToList();
-        draft.PreferredPlayer = PreferredPlayer.SelectedItem as string ?? "";
+        draft.PreferredPlayer = PreferredPlayer.SelectedValue as string ?? "";
         draft.Presence = SharePresence.IsChecked == true;
         draft.Device = ShareDevice.IsChecked == true;
         draft.Network = ShareNetwork.IsChecked == true;
@@ -189,7 +191,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         draft.MusicDirectory = directory;
         draft.IdleMinutes = (int)(IdleMinutes.Value ?? 3);
         draft.WhatPulsePort = (int)(PulsePort.Value ?? 3490);
-        try { draft.ApplyTo(settings); settings.Save(); await engine.Configure(settings); CollectionNotice.Text = settings.Enabled ? "采集设置已保存，正在同步。" : "采集设置已保存；到概览点击开始同步后上传。"; }
+        try { draft.ApplyTo(settings); settings.Save(); await engine.Configure(settings); CollectionNotice.Text = "采集设置已保存。同步状态见窗口底部。"; }
         catch { CollectionNotice.Text = "保存失败，请检查配置目录权限。"; }
     }
     void StartSync(object sender, RoutedEventArgs e)
@@ -252,6 +254,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
                 };
                 apps.Add(old);
             }
+            old.Label = item.Label;
             try
             {
                 using var proc = System.Diagnostics.Process.GetProcessesByName(item.Id).FirstOrDefault();
@@ -270,15 +273,24 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
             catch { }
         }
         CollectionViewSource.GetDefaultView(apps).Refresh();
+        AppList.Items.Refresh();
+        UpdateAppSearchHint();
     }
     void SearchChanged(object sender, TextChangedEventArgs e)
     {
         if (AppList == null)
             return;
         CollectionViewSource.GetDefaultView(apps).Filter = x => x is AppChoice a && (a.Label.Contains(Search.Text, StringComparison.OrdinalIgnoreCase) || a.Id.Contains(Search.Text, StringComparison.OrdinalIgnoreCase));
+        UpdateAppSearchHint();
+    }
+    void UpdateAppSearchHint()
+    {
+        if (AppSearchHint == null) return;
+        AppSearchHint.Text = CollectionViewSource.GetDefaultView(apps).IsEmpty ? "没有匹配的应用。先打开目标应用，再点击刷新应用；也可以更换搜索词。" : "列表来自正在运行的应用与已保存的选择。右侧可填写展示别名。";
     }
     void RefreshPlayers(object sender, RoutedEventArgs e)
     {
+        var preferred = PreferredPlayer.SelectedValue as string ?? settings.PreferredPlayer;
         foreach (var id in engine.Sources.Players())
             if (!players.Any(x => x.Id == id))
                 players.Add(new()
@@ -286,8 +298,11 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
                     Id = id,
                     Label = id
                 });
-        PreferredPlayer.ItemsSource = new[] { "" }.Concat(players.Select(p => p.Id)).ToArray();
-        PreferredPlayer.SelectedItem = settings.PreferredPlayer;
+        foreach (var player in players) player.Label = DesktopSources.PlayerLabel(player.Id);
+        PlayerList.Items.Refresh();
+        PreferredPlayer.ItemsSource = new[] { new AppChoice { Id = "", Label = "自动选择正在播放的播放器" } }.Concat(players).ToArray();
+        PreferredPlayer.SelectedValue = preferred;
+        PlayerHint.Text = players.Count == 0 ? "尚未发现播放器。请先打开播放器并播放一首歌，再刷新列表。" : "勾选要采集的播放器；多个播放器同时播放时，优先使用下方选择。";
     }
     void ChooseDirectory(object sender, RoutedEventArgs e)
     {
@@ -295,7 +310,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         if (picker.ShowDialog(this) == true)
         {
             directory = picker.FolderName;
-            DirectoryLabel.Text = directory;
+            DirectoryLabel.Text = directory.Length == 0 ? "未选择音乐目录（可选）" : directory;
         }
     }
     async void RefreshLyrics(object sender, RoutedEventArgs e)

@@ -178,6 +178,16 @@ public sealed class DesktopSources : IDisposable
         lock (subscribed)
             return subscribed.Select(s => s.SourceAppUserModelId).Distinct().ToArray();
     }
+    public static string PlayerLabel(string id)
+    {
+        try
+        {
+            var name = Windows.ApplicationModel.AppInfo.GetFromAppUserModelId(id)?.DisplayInfo?.DisplayName;
+            if (!string.IsNullOrWhiteSpace(name)) return name;
+        }
+        catch { }
+        return id;
+    }
     public static List<(string Id, string Label)> Applications()
     {
         var found = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -210,7 +220,7 @@ public sealed class DesktopSources : IDisposable
         bool active = !isLocked && secured == false && screenOn != false && idle.HasValue && idle < cfg.IdleMinutes * 60000L;
         string id = "", label = "";
         var hwnd = GetForegroundWindow();
-        AppStatus = cfg.AppMode == "off" ? "应用分享已关闭" : isLocked ? "已锁屏，隐藏前台应用" : secured != false ? "无法确认桌面可访问状态" : screenOn == false ? "屏幕已关闭，隐藏前台应用" : "未取得前台窗口";
+        AppStatus = cfg.AppMode == "off" ? "应用采集已关闭" : isLocked ? "已锁屏，隐藏前台应用" : secured != false ? "无法确认桌面可访问状态" : screenOn == false ? "屏幕已关闭，隐藏前台应用" : "未取得前台窗口";
         if (!isLocked && secured == false && screenOn != false && cfg.AppMode != "off")
             try
             {
