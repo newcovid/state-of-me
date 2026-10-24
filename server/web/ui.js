@@ -29,4 +29,5 @@ document.querySelector('#forget').onclick=()=>{connect('','');notice.textContent
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)refresh();});
 setInterval(refresh,5000);requestAnimationFrame(frame);
 
-if(new URLSearchParams(location.search).get("user"))connect("publicUser","");
+const publicName=new URLSearchParams(location.search).get('user');
+if(publicName){document.querySelector('#connection').hidden=true;document.querySelector('h1').textContent=publicName+' 的公开状态';connect('publicUser','');}
