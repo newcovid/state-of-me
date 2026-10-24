@@ -4,3 +4,6 @@ assert.equal(p.position(m,1000),2500);assert.equal(p.lyric(m,2499),'a');assert.e
 console.log('Playback contracts passed');
 
 assert.equal(p.position({position_ms:1000,playing:true,position_known:false},5000),1000);
+
+assert.deepEqual(p.context({resources:{cpu_percent:0},audio:{media_muted:false},usage_summary:{keys:0}}),[['媒体静音','否'],['CPU %','0'],['本次 Pulse 后按键','0']]);
+assert.deepEqual(p.context({resources:{cpu_percent:null},secret:{token:'hidden'}}),[]);
