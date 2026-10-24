@@ -34,3 +34,7 @@ console.log('Widget full-field, multiple-media, partial authorization, history, 
 
 assert.equal(formatValue('sampled_at',1792800000),new Date(1792800000*1000).toLocaleString());
 card.history=[{sampled_at:1792800000,days:[]}];card.render();assert.ok(texts(card.nodes.summary).some(t=>t.includes('（浏览器本地时间）')));
+
+assert.equal(formatValue('profiles',[]),'暂无 Profile');
+assert.ok(formatValue('profiles',[{id:1,name:'<script>profile</script>',active:true,created_at:'2026-10-25',updated_at:'2026-10-25'}]).includes('当前启用'));
+assert.equal(formatValue('realtime_download','12,3KB/s'),'12,3KB/s');

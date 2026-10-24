@@ -13,7 +13,7 @@ from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-app = FastAPI(title="State of Me", version="0.15.0")
+app = FastAPI(title="State of Me", version="0.17.0")
 DB = os.getenv("SOM_DB", "state.db")
 CONFIG = os.getenv("SOM_CONFIG", "config.json")
 WEB = Path(__file__).parent / "web"
@@ -78,6 +78,15 @@ class Display(BaseModel):
     fullscreen: bool | None = None
 
 
+class WhatPulseProfile(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    id: int | None = Field(default=None, ge=0, le=9007199254740991)
+    name: str | None = Field(default=None, max_length=128)
+    active: bool | None = None
+    created_at: str | None = Field(default=None, max_length=128)
+    updated_at: str | None = Field(default=None, max_length=128)
+
+
 class UsageSummary(BaseModel):
     model_config = ConfigDict(extra='forbid')
     source: Literal['whatpulse'] = 'whatpulse'
@@ -94,6 +103,57 @@ class UsageSummary(BaseModel):
     download_bytes_per_second: float | None = Field(default=None, ge=0, le=1e15, allow_inf_nan=False)
     upload_bytes_per_second: float | None = Field(default=None, ge=0, le=1e15, allow_inf_nan=False)
     sample_seconds: float | None = Field(default=None, ge=0, le=120, allow_inf_nan=False)
+
+    words: int | None = Field(default=None, ge=0, le=9007199254740991)
+    distance_inches: float | None = Field(default=None, ge=0, le=9007199254740991, allow_inf_nan=False)
+    keys_formatted: str | None = Field(default=None, max_length=128)
+    account_keys_formatted: str | None = Field(default=None, max_length=128)
+    account_keys: int | None = Field(default=None, ge=0, le=9007199254740991)
+    clicks_formatted: str | None = Field(default=None, max_length=128)
+    account_clicks_formatted: str | None = Field(default=None, max_length=128)
+    account_clicks: int | None = Field(default=None, ge=0, le=9007199254740991)
+    scrolls_formatted: str | None = Field(default=None, max_length=128)
+    account_scrolls_formatted: str | None = Field(default=None, max_length=128)
+    account_scrolls: int | None = Field(default=None, ge=0, le=9007199254740991)
+    words_formatted: str | None = Field(default=None, max_length=128)
+    account_words_formatted: str | None = Field(default=None, max_length=128)
+    account_words: int | None = Field(default=None, ge=0, le=9007199254740991)
+    download_formatted: str | None = Field(default=None, max_length=128)
+    account_download_formatted: str | None = Field(default=None, max_length=128)
+    account_download_mb: float | None = Field(default=None, ge=0, le=9007199254740991, allow_inf_nan=False)
+    upload_formatted: str | None = Field(default=None, max_length=128)
+    account_upload_formatted: str | None = Field(default=None, max_length=128)
+    account_upload_mb: float | None = Field(default=None, ge=0, le=9007199254740991, allow_inf_nan=False)
+    uptime_formatted: str | None = Field(default=None, max_length=128)
+    account_uptime_formatted: str | None = Field(default=None, max_length=128)
+    account_uptime: int | None = Field(default=None, ge=0, le=9007199254740991)
+    distance_formatted: str | None = Field(default=None, max_length=128)
+    account_distance_formatted: str | None = Field(default=None, max_length=128)
+    account_distance_miles: float | None = Field(default=None, ge=0, le=9007199254740991, allow_inf_nan=False)
+    account_rank_words: int | None = Field(default=None, ge=0, le=9007199254740991)
+    account_rank_words_formatted: str | None = Field(default=None, max_length=128)
+    account_rank_keys: int | None = Field(default=None, ge=0, le=9007199254740991)
+    account_rank_keys_formatted: str | None = Field(default=None, max_length=128)
+    account_rank_clicks: int | None = Field(default=None, ge=0, le=9007199254740991)
+    account_rank_clicks_formatted: str | None = Field(default=None, max_length=128)
+    account_rank_scrolls: int | None = Field(default=None, ge=0, le=9007199254740991)
+    account_rank_scrolls_formatted: str | None = Field(default=None, max_length=128)
+    account_rank_distance: int | None = Field(default=None, ge=0, le=9007199254740991)
+    account_rank_distance_formatted: str | None = Field(default=None, max_length=128)
+    account_rank_download: int | None = Field(default=None, ge=0, le=9007199254740991)
+    account_rank_download_formatted: str | None = Field(default=None, max_length=128)
+    account_rank_upload: int | None = Field(default=None, ge=0, le=9007199254740991)
+    account_rank_upload_formatted: str | None = Field(default=None, max_length=128)
+    account_rank_uptime: int | None = Field(default=None, ge=0, le=9007199254740991)
+    account_rank_uptime_formatted: str | None = Field(default=None, max_length=128)
+    realtime_keys: str | None = Field(default=None, max_length=128)
+    realtime_clicks: str | None = Field(default=None, max_length=128)
+    realtime_download: str | None = Field(default=None, max_length=128)
+    realtime_upload: str | None = Field(default=None, max_length=128)
+    whatpulse_idle_seconds: int | None = Field(default=None, ge=0, le=9007199254740991)
+    whatpulse_last_input: str | None = Field(default=None, max_length=128)
+    profiles: list[WhatPulseProfile] | None = Field(default=None, max_length=128)
+    profiles_truncated: bool | None = None
 
 
 class DeviceState(BaseModel):
@@ -237,7 +297,7 @@ def authenticate(authorization, entries):
 @app.middleware("http")
 async def guard(request: Request, call_next):
     # Never cache personal state, even for unauthenticated public projections.
-    maximum = 1048576 if request.url.path == "/v1/usage" else 16384
+    maximum = 1048576 if request.url.path == "/v1/usage" else 262144 if request.url.path == "/v1/events" else 16384
     length = request.headers.get("content-length")
     if length:
         try:
@@ -261,7 +321,7 @@ async def guard(request: Request, call_next):
 def health():
     with db() as conn:
         conn.execute("SELECT 1")
-    return {"ok": True, "version": "0.15.0"}
+    return {"ok": True, "version": "0.17.0"}
 
 
 @app.post("/v1/events")

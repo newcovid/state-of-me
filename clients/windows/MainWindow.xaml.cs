@@ -164,6 +164,11 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         CollectionSummary.Text = ClientPresentation.CollectionSummary(settings);
         var stats = engine.Preview["usage_summary"];
         Statistics.Text = ClientPresentation.Statistics(settings, stats);
+        PulseDetails0.Text = ClientPresentation.WhatPulseDetails(stats, 0);
+        PulseDetails1.Text = ClientPresentation.WhatPulseDetails(stats, 1);
+        PulseDetails2.Text = ClientPresentation.WhatPulseDetails(stats, 2);
+        PulseDetails3.Text = ClientPresentation.WhatPulseDetails(stats, 3);
+        PulseDetails4.Text = ClientPresentation.WhatPulseDetails(stats, 4);
         PulseStatus.Text = engine.WhatPulseStatus;
         LyricsStatus.Text = directory != settings.MusicDirectory ? "所选目录尚未保存；保存采集设置后自动索引。" : engine.LyricStatus;
     }

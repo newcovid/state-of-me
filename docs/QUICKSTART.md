@@ -45,6 +45,12 @@ Caddy 独立域名示例（替换域名）：
 
 ```caddyfile
 status.example.com {
+    handle /v1/events {
+        request_body {
+            max_size 256KiB
+        }
+        reverse_proxy 127.0.0.1:8080
+    }
     handle /v1/usage {
         request_body {
             max_size 1MiB
@@ -65,6 +71,12 @@ status.example.com {
 ```caddyfile
 redir /presence /presence/ 308
 handle_path /presence/* {
+    handle /v1/events {
+        request_body {
+            max_size 256KiB
+        }
+        reverse_proxy 127.0.0.1:8080
+    }
     handle /v1/usage {
         request_body {
             max_size 1MiB
@@ -82,7 +94,7 @@ handle_path /presence/* {
 
 代理示例依据 Caddy 官方 [handle_path](https://caddyserver.com/docs/caddyfile/directives/handle_path) 与 [request_body](https://caddyserver.com/docs/caddyfile/directives/request_body) 文档。
 
-后端没有硬编码部署前缀。客户端、AstrBot `url` 必须包含你实际使用的 `/presence`；`accounts.origin` 只包含 `https://example.com`，初始化工具已自动处理。不要缓存账号、设备登记或状态响应。`POST /v1/usage` 为历史统计批量上传，允许 1 MiB；其余请求限制 16 KiB。不要把整个站点的限额统一提高。
+后端没有硬编码部署前缀。客户端、AstrBot `url` 必须包含你实际使用的 `/presence`；`accounts.origin` 只包含 `https://example.com`，初始化工具已自动处理。不要缓存账号、设备登记或状态响应。`POST /v1/usage` 为历史统计批量上传，允许 1 MiB；`POST /v1/events` 允许 256 KiB（含有界 WhatPulse Profile 列表）；其余请求限制 16 KiB。不要把整个站点的限额统一提高。
 
 **如果 Caddy 本身在容器里**，`127.0.0.1` 是代理容器自己。请将代理和 State of Me 加入同一个 Docker 网络，代理到 `state-of-me:8080`，而非照抄宿主机目标。不要把明文写入端口直接开放到公网。
 

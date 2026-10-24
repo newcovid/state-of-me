@@ -205,7 +205,7 @@ def install(app, db, config, project, authenticate, web):
     @app.get('/v1/accounts/info')
     def info():
         options = raw_config().get('accounts', {})
-        return {'registration': options.get('registration', False), 'groups': list(options.get('bot_groups', {})), 'scopes': scopes.CATALOG, 'native_accounts': True, 'version': '0.15.0'}
+        return {'registration': options.get('registration', False), 'groups': list(options.get('bot_groups', {})), 'scopes': scopes.CATALOG, 'native_accounts': True, 'version': '0.17.0'}
 
     @app.post('/v1/accounts/register')
     def register(body: Credentials, request: Request, response: Response):

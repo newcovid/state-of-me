@@ -47,6 +47,35 @@ class AccountTests(unittest.TestCase):
         self.x.post('/v1/bot/bind',headers=self.bot,json={'group_id':'123456','code':code,'qq':qq}).raise_for_status()
         pending=client.get('/v1/accounts/me').json()['pending'][0]
         client.post('/v1/accounts/bind-confirm',json={'id':pending['id']}).raise_for_status()
+    def test_full_whatpulse_upload_and_exact_audience_projection(self):
+        _, device = self.pair(self.x, 'alice')
+        self.bind(self.x, '111111')
+        pulse = {'sampled_at': int(time.time()), 'words': 12, 'distance_inches': 1.5,
+                 'account_keys': 100000, 'account_download_mb': 12.5,
+                 'account_rank_words': 4, 'account_rank_words_formatted': '4th',
+                 'realtime_download': '12,3KB/s', 'whatpulse_last_input': '2026-10-25T09:20:00',
+                 'profiles': [{'id': 1, 'name': 'Private profile', 'active': True}], 'profiles_truncated': False}
+        response = self.x.post('/v1/events', headers={'Authorization': 'Bearer '+device['token']},
+                               json={'seq': 1, 'observed_at': int(time.time()), 'usage_summary': pulse})
+        self.assertEqual(response.status_code, 200, response.text)
+        own = self.x.get('/v1/accounts/status').json()['devices'][0]['usage_summary']
+        self.assertEqual(own['account_download_mb'], 12.5)
+        self.assertEqual(own['profiles'][0]['name'], 'Private profile')
+        self.assertEqual(self.x.get('/v1/public/users/alice').status_code, 404)
+        self.share(self.x, ['usage_summary.words', 'usage_summary.realtime_download'])
+        public = self.x.get('/v1/public/users/alice').json()['devices'][0]['usage_summary']
+        self.assertEqual(public, {'words': 12, 'realtime_download': '12,3KB/s'})
+        self.assertNotIn('profiles', public)
+        from server import scopes
+        self.assertEqual(scopes.project_device({'usage_summary': pulse}, ['usage_summary.account_rank_words'])['usage_summary'], {'account_rank_words': 4})
+        self.assertIn('usage_summary.profiles', scopes.KEYS)
+        self.assertEqual(len(m.UsageSummary.model_fields), 64)
+        # Reject malformed statistics instead of letting structured profile data escape its contract.
+        bad = dict(pulse, profiles=[{'name': 'x'*129}])
+        response = self.x.post('/v1/events', headers={'Authorization': 'Bearer '+device['token']},
+                               json={'seq': 2, 'observed_at': int(time.time()), 'usage_summary': bad})
+        self.assertEqual(response.status_code, 422)
+
     def test_isolation_and_private_default(self):
         _,x=self.pair(self.x,'alice'); _,y=self.pair(self.y,'bob')
         self.assertEqual(self.send(x,'alice-app').status_code,200);self.assertEqual(self.send(y,'bob-app').status_code,200)

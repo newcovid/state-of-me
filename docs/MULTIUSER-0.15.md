@@ -44,7 +44,7 @@ flowchart LR
 - 字段目录：`GET /v1/accounts/info` 的 `scopes`，客户端按目录展示，不把某位部署者的账号、QQ 或群号写死。
 - 管理快照：`GET /v1/accounts/me` 返回 `public_fields`、`group_scopes` 和 `scope_revision`。保存范围带 `expected_revision`，版本冲突返回 409。
 - 原生管理请求带 `Authorization: Bearer <account session>`、`X-SOM-Account`、`X-SOM-CSRF: 1`；网页使用受保护 Cookie。上传凭据与管理凭据不能混用。
-- 实时上传：`POST /v1/events`；历史批量上传：`POST /v1/usage`。HTTPS 代理仅对历史上传放宽到 1 MiB，其余保持 16 KiB。
+- 实时上传：`POST /v1/events`；历史批量上传：`POST /v1/usage`。HTTPS 代理对历史上传放宽到 1 MiB，0.17 起实时事件允许 256 KiB（有界 WhatPulse Profile 列表），其他请求保持 16 KiB。
 - 群查询：`GET /v1/bot/status/{qq}` 与 `GET /v1/bot/usage/{qq}`，由服务端验证群服务凭据和用户授权。
 - 公开查询：`GET /v1/public/users/{name}`，无凭据；卡片只消费这份投影。
 
