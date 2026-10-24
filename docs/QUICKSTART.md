@@ -35,7 +35,7 @@ docker compose -f deploy/compose.yaml ps
 curl --fail http://127.0.0.1:8080/health
 ```
 
-应返回 `ok: true` 与版本号，容器随后显示 healthy。端口默认只绑定宿主机回环地址。8080 被占用时使用 `SOM_PORT=18080 docker compose -f deploy/compose.yaml up -d --build`，并同步修改代理目标。
+应返回 `ok: true` 与版本号，容器随后显示 healthy。端口默认只绑定宿主机回环地址。8080 被占用时使用 `SOM_PORT=18080 docker compose -f deploy/compose.yaml up -d --build`，并同步修改代理目标。升级、重建时也必须传入同一个 `SOM_PORT`，否则会回到默认 8080；可在部署 shell 中 `export SOM_PORT=18080` 后统一执行后续命令。
 
 ### HTTPS：代理直接运行在宿主机
 
