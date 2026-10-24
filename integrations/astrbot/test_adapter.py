@@ -63,15 +63,15 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(body,{'code':'ABCD2345','group_id':'123456','qq':'111111'})
             event.stop_event.assert_called_once();self.assertEqual(output,['confirm in browser'])
 
-    async def test_desktop_signals_do_not_inventory_diagnostics(self):
+    async def test_authorized_desktop_context_is_preserved(self):
         data = {'devices': [{'device': 'desktop', 'app': 'Editor',
                 'presence': {'state': 'active'}, 'usage_summary': {'keys': 40},
                 'manual_status': {'text': 'Focus'}}]}
-        general = self.m.select_signals(data, '群主在干什么')['devices'][0]
-        self.assertNotIn('usage_summary', general)
-        self.assertNotIn('presence', general)
+        general = self.m.validate_signals(data)['devices'][0]
+        self.assertEqual(general['usage_summary'], {'keys':40})
+        self.assertEqual(general['presence'], {'state':'active'})
         self.assertIn('manual_status', general)
-        detailed = self.m.select_signals(data, 'WhatPulse 按键统计')['devices'][0]
+        detailed = self.m.validate_signals(data)['devices'][0]
         self.assertEqual(detailed['usage_summary']['keys'], 40)
 
     async def test_other_self_never_fetches_owner(self):
@@ -108,7 +108,7 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
             result = await self.adapter.get_my_status(self.event('我的网络怎么样', sender='222222'))
         data = json.loads(result)
         self.assertEqual(data['subject_qq'], '222222')
-        self.assertIn('最近是否同步成功', data['detail'])
+        self.assertIn('没有可读取的新鲜状态', data['detail'])
         self.assertIn('不能据此判断本人离线', data['detail'])
 
     async def test_transport_failure_is_not_identity_failure(self):
@@ -116,23 +116,23 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
             result = await self.adapter.get_my_status(self.event('我的网络怎么样', sender='222222'))
         self.assertIn('状态服务暂时连接不上', result)
 
-    def test_general_question_omits_stale_music_and_diagnostics(self):
+    def test_validation_only_removes_nonplaying_music(self):
         payload={'devices':[{'device':'phone','app':'editor','app_details':{'label':'Editor'},
                  'music':{'title':'Old song','playing':False},'device_state':{'charging':True},
                  'network':{'validated':True},'audio':{'media_muted':False}}]}
-        result=self.m.select_signals(payload,'群主在干什么')
-        self.assertEqual(set(result['devices'][0]),{'device','app','app_details'})
+        result=self.m.validate_signals(payload)
+        self.assertEqual(set(result['devices'][0]),{'device','app','app_details','device_state','network','audio'})
         self.assertIn('music',payload['devices'][0])  # No mutation of source.
 
-    def test_general_question_keeps_meaningful_state_not_negative_inventory(self):
+    def test_false_and_numeric_facts_are_preserved(self):
         payload={'devices':[{'device':'phone','device_state':{'locked':True,'charging':False,'battery_percent':80}}]}
-        result=self.m.select_signals(payload,'群主现在什么状态')
-        self.assertEqual(result['devices'][0]['device_state'],{'locked':True})
+        result=self.m.validate_signals(payload)
+        self.assertEqual(result['devices'][0]['device_state'],payload['devices'][0]['device_state'])
         payload['devices'][0]['device_state']={'locked':False,'charging':False}
-        self.assertEqual(self.m.select_signals(payload,'群主在干嘛')['devices'],[])
+        self.assertEqual(self.m.validate_signals(payload)['devices'],payload['devices'])
 
     async def test_general_empty_reply_does_not_offer_technical_checklist(self):
         with patch('urllib.request.urlopen',return_value=io.BytesIO(b'{"devices":[]}')):
             result=await self.adapter.get_my_status(self.event('我在干什么',sender='222222'))
-        self.assertIn('暂时看不出具体在忙什么',json.loads(result)['detail'])
+        self.assertIn('没有可读取的新鲜状态',json.loads(result)['detail'])
         self.assertNotIn('检查 App',result)

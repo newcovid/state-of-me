@@ -13,7 +13,7 @@ from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-app = FastAPI(title="State of Me", version="0.12.1")
+app = FastAPI(title="State of Me", version="0.13.0")
 DB = os.getenv("SOM_DB", "state.db")
 CONFIG = os.getenv("SOM_CONFIG", "config.json")
 WEB = Path(__file__).parent / "web"
@@ -155,6 +155,12 @@ class AppDetails(BaseModel):
     model_config = ConfigDict(extra="forbid")
     label: str = Field(default='', max_length=120)
     active_for_ms: int | None = Field(default=None, ge=0, le=3600000)
+    foreground: bool | None = None
+    input_idle: bool | None = None
+    z_order: int | None = Field(default=None, ge=0, le=256)
+    always_on_top: bool | None = None
+    maximized: bool | None = None
+    fullscreen: bool | None = None
 
 
 CONTEXT_FIELDS = ('device_state', 'network', 'audio', 'resources', 'collector_health', 'app_details', 'presence', 'manual_status', 'display', 'usage_summary')
@@ -254,7 +260,7 @@ async def guard(request: Request, call_next):
 def health():
     with db() as conn:
         conn.execute("SELECT 1")
-    return {"ok": True, "version": "0.12.1"}
+    return {"ok": True, "version": "0.13.0"}
 
 
 @app.post("/v1/events")

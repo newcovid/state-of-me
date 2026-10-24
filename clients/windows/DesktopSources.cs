@@ -13,6 +13,12 @@ public sealed class DesktopSources : IDisposable
     [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
     [DllImport("user32.dll")] static extern bool GetLastInputInfo(ref LastInput input);
     [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr h, out Rect r);
+    [DllImport("user32.dll")] static extern IntPtr GetWindow(IntPtr h, uint command);
+    [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr h);
+    [DllImport("user32.dll")] static extern bool IsIconic(IntPtr h);
+    [DllImport("user32.dll")] static extern bool IsZoomed(IntPtr h);
+    [DllImport("user32.dll", EntryPoint="GetWindowLongPtrW")] static extern IntPtr GetWindowLongPtr(IntPtr h, int index);
+    [DllImport("dwmapi.dll")] static extern int DwmGetWindowAttribute(IntPtr h, int attribute, out int value, int size);
     [DllImport("user32.dll")] static extern IntPtr OpenInputDesktop(uint flags, bool inherit, uint access);
     [DllImport("user32.dll")] static extern bool CloseDesktop(IntPtr h);
     [DllImport("user32.dll")] static extern bool SwitchDesktop(IntPtr h);
@@ -78,6 +84,17 @@ public sealed class DesktopSources : IDisposable
     bool locked, disposed; long appSince; string current = "", currentLabel = "";
     long lastIdle, lastKernel, lastUser, contextAt = -60000; JsonObject context = new();
     public string MediaCapability { get; private set; } = "initializing";
+    public string AppStatus { get; private set; } = "等待采集";
+    static int? VisibleRank(IntPtr window)
+    {
+        int rank=0;var visited=new HashSet<IntPtr>();
+        for(var h=GetWindow(window,3);h!=IntPtr.Zero;h=GetWindow(h,3))
+        {
+            if(!visited.Add(h)||visited.Count>256)return null;
+            if(IsWindowVisible(h)&&!IsIconic(h)&&DwmGetWindowAttribute(h,14,out var cloaked,4)==0&&cloaked==0)rank++;
+        }
+        return rank;
+    }
     public DesktopSources(Action onChanged)
     {
         changed = onChanged;
@@ -193,18 +210,26 @@ public sealed class DesktopSources : IDisposable
         bool active = !isLocked && secured == false && screenOn != false && idle.HasValue && idle < cfg.IdleMinutes * 60000L;
         string id = "", label = "";
         var hwnd = GetForegroundWindow();
-        if (active && cfg.AppMode != "off")
+        AppStatus = cfg.AppMode == "off" ? "应用分享已关闭" : isLocked ? "已锁屏，隐藏前台应用" : secured != false ? "无法确认桌面可访问状态" : screenOn == false ? "屏幕已关闭，隐藏前台应用" : "未取得前台窗口";
+        if (!isLocked && secured == false && screenOn != false && cfg.AppMode != "off")
             try
             {
                 GetWindowThreadProcessId(hwnd, out var pid);
                 using var p = Process.GetProcessById((int)pid);
                 id = p.ProcessName;
                 if (!cfg.Permitted(id))
+                {
+                    AppStatus = cfg.AppMode == "blacklist" ? "前台应用被黑名单隐藏" : "前台应用未加入白名单";
                     id = "";
+                }
                 else
-                    label = id == current ? currentLabel : p.MainModule?.FileVersionInfo.FileDescription ?? id;
+                {
+                    label = id;
+                    try { label = id == current ? currentLabel : p.MainModule?.FileVersionInfo.FileDescription ?? id; } catch { }
+                    AppStatus = "前台应用已采集";
+                }
             }
-            catch { id = ""; }
+            catch { id = ""; AppStatus = "前台进程暂不可读取"; }
         if (id != current)
         {
             current = id;
@@ -217,6 +242,17 @@ public sealed class DesktopSources : IDisposable
             if (cfg.AppAliases.TryGetValue(id, out var alias) && !string.IsNullOrWhiteSpace(alias))
                 label = alias;
             result["app_details"] = new JsonObject { ["label"] = label.Length > 120 ? label[..120] : label, ["active_for_ms"] = Math.Min(3600000, now - appSince) };
+            var details=(JsonObject)result["app_details"]!;
+            details["foreground"]=true;
+            details["input_idle"]=idle.HasValue ? (bool?)(idle >= cfg.IdleMinutes*60000L) : null;
+            details["z_order"]=VisibleRank(hwnd);
+            details["always_on_top"]=(GetWindowLongPtr(hwnd,-20).ToInt64() & 8)!=0;
+            details["maximized"]=IsZoomed(hwnd);
+            if(GetWindowRect(hwnd,out var rect))
+            {
+                var bounds=System.Windows.Forms.Screen.FromHandle(hwnd).Bounds;
+                details["fullscreen"]=rect.Left<=bounds.Left&&rect.Top<=bounds.Top&&rect.Right>=bounds.Right&&rect.Bottom>=bounds.Bottom;
+            }
         }
         if (cfg.Presence)
             result["presence"] = new JsonObject { ["state"] = isLocked ? "locked" : idle == null || secured == null ? "unknown" : active ? "active" : "idle", ["idle_seconds"] = idle / 1000 };

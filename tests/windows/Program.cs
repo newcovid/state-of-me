@@ -14,3 +14,5 @@ Check(WhatPulseSource.Summarize(second,first,100,1100)["sample_seconds"]==null,"
 Console.WriteLine("WhatPulse delta and reset tests passed");
 
 Check(!System.Text.Json.JsonSerializer.Serialize(cfg).Contains("test-only-not-a-real-credential"),"plaintext token excluded from serialized settings");
+
+var empty=new Settings{AppMode="blacklist"};Check(empty.Permitted("Editor")&&empty.Permitted("UnlistedApp"),"empty blacklist shares all foreground apps");empty.AppMode="whitelist";Check(!empty.Permitted("Editor"),"empty whitelist shares none");

@@ -1,7 +1,7 @@
 param([string]$OutputDirectory="")
 $ErrorActionPreference='Stop'
 $repoRoot=(Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
-if(-not $OutputDirectory){$OutputDirectory=Join-Path $repoRoot 'dist/windows-0.12.0'}
+if(-not $OutputDirectory){$OutputDirectory=Join-Path $repoRoot 'dist/windows-0.13.0'}
 dotnet publish $PSScriptRoot -c Release -r win-x64 --self-contained true -o $OutputDirectory
 if($LASTEXITCODE -ne 0){throw 'Desktop publish failed'}
 $licenseDir=Join-Path $OutputDirectory 'licenses'

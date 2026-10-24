@@ -6,17 +6,18 @@ public partial class App : System.Windows.Application
     Mutex? instance; EventWaitHandle? showEvent; RegisteredWaitHandle? showWait;
     protected override async void OnStartup(System.Windows.StartupEventArgs e)
     {
-        if (e.Args.Length == 2 && e.Args[0] == "--probe")
+        if (e.Args.Length == 2 && (e.Args[0] == "--probe" || e.Args[0] == "--probe-foreground"))
         {
             ShutdownMode = System.Windows.ShutdownMode.OnExplicitShutdown;
             try
             {
                 using var sources = new DesktopSources(() => { });
                 await sources.Initialize();
-                var cfg = new Settings { AppMode = "off", Presence = true, Device = true, Network = true, Audio = true, Resources = true, Display = true };
+                var cfg = new Settings { AppMode = e.Args[0] == "--probe-foreground" ? "blacklist" : "off", Presence = true, Device = true, Network = true, Audio = true, Resources = true, Display = true };
                 var data = sources.Collect(cfg);
                 using var pulse = new WhatPulseSource();
                 data["usage_summary"] = await pulse.Read(true, 3490);
+                data["app_capture_status"] = sources.AppStatus;
                 data["seq"] = 1;
                 data["observed_at"] = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
                 File.WriteAllText(Path.GetFullPath(e.Args[1]), data.ToJsonString());

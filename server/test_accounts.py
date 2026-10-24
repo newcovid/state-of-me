@@ -60,6 +60,19 @@ class AccountTests(unittest.TestCase):
         code=response.json()['code']
         # A different group's service credential cannot claim this typed group.
         self.assertEqual(self.x.post('/v1/bot/bind',headers=self.bot,json={'group_id':'654321','code':code,'qq':'333333'}).status_code,401)
+
+    def test_foreground_context_is_group_scoped_and_filtered_with_app(self):
+        _,device=self.pair(self.x,'alice')
+        details={'label':'Editor','foreground':True,'input_idle':True,'z_order':2,'always_on_top':False,'maximized':True,'fullscreen':False}
+        self.x.post('/v1/events',headers={'Authorization':'Bearer '+device['token']},json={'seq':1,'observed_at':time.time(),'app':'editor','app_details':details}).raise_for_status()
+        self.bind(self.x,'333333')
+        result=self.x.get('/v1/bot/status/333333?group_id=123456',headers=self.bot).json()
+        self.assertEqual(result['devices'][0]['app_details'],details)
+        self.x.post('/v1/accounts/public',json={'enabled':True}).raise_for_status()
+        self.assertEqual(self.x.get('/v1/public/users/alice').json()['devices'][0]['app_details'],{'label':'Editor'})
+        with m.db() as c:c.execute('UPDATE snapshots SET received=received-2')
+        self.x.post('/v1/events',headers={'Authorization':'Bearer '+device['token']},json={'seq':2,'observed_at':time.time(),'app_details':details}).raise_for_status()
+        self.assertEqual(self.x.get('/v1/bot/status/333333?group_id=123456',headers=self.bot).json()['devices'],[])
     def test_pair_secret_account_and_revocation(self):
         p=self.x.post('/v1/pairings',json={'label':'Laptop','platform':'windows'}).json()
         self.assertEqual(self.x.post('/v1/pairings/approve',json={'code':p['code'],'account':'bob'}).status_code,409)

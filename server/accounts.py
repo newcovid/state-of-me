@@ -86,13 +86,15 @@ def session(response, uid):
         c.execute('INSERT INTO sessions VALUES(?,?,?)', (digest(token), uid, time.time()+30*86400))
     response.set_cookie('som_session', token, max_age=30*86400, httponly=True, secure=True, samesite='strict', path='/')
 
-def audience(uid, fields=None):
+def audience(uid, fields=None, group_context=False):
     with connection() as c:
         ids = [x[0] for x in c.execute('SELECT id FROM user_devices WHERE uid=?', (uid,))]
     result = {'devices': ids, 'fields': ALL_FIELDS if fields is None else fields}
     if fields is not None:
         result['device_state_fields'] = ['battery_percent', 'charging', 'locked']
         result['app_details_fields'] = ['label']
+        if group_context:
+            result['app_details_fields'] += ['foreground', 'input_idle', 'z_order', 'always_on_top', 'maximized', 'fullscreen']
         result['presence_fields'] = ['state']
     return result
 
@@ -387,7 +389,7 @@ def install(app, db, config, project, authenticate, web):
                 grant = c.execute('SELECT fields FROM group_grants WHERE uid=? AND group_id=?', (row[0], group_id)).fetchone()
                 if not grant:
                     return {'status': 'not_shared', 'devices': []}
-                scope = audience(row[0], json.loads(grant[0]))
+                scope = audience(row[0], json.loads(grant[0]), group_context=True)
             else:
                 return {'status': 'unbound', 'devices': []}
         return project(enrich(cfg), scope)

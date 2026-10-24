@@ -180,12 +180,12 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
     {
         if (!IsVisible)
             return;
-        StatusText.Text = engine.Status;
+        StatusText.Text = string.IsNullOrWhiteSpace(settings.Account) || settings.Token.Length < 24 ? "尚未连接账号，请在连接页完成配对" : engine.Status;
         if (settings.ConnectionInvalid) ConnectionView();
-        Summary.Text = settings.Enabled ? (engine.Preview["app_details"]?["label"]?.ToString() ?? engine.Preview["music"]?["title"]?.ToString() ?? "等待允许分享的活动") : "分享已暂停";
+        Summary.Text = settings.Enabled ? (engine.Preview["app_details"]?["label"]?.ToString() ?? engine.Preview["music"]?["title"]?.ToString() ?? engine.Sources.AppStatus) : "分享已暂停";
         Counters.Text = $"采集 {engine.Collections} 次    上传 {engine.Uploads} 次    去重 {engine.Skipped} 次";
         Preview.Text = engine.Preview.ToJsonString(new JsonSerializerOptions { WriteIndented = true, Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping });
-        Health.Text = $"媒体接口：{engine.Sources.MediaCapability}；请求正文累计 {engine.Bytes} 字节。受众权限以服务端为准。";
+        Health.Text = $"前台应用：{engine.Sources.AppStatus}；媒体接口：{engine.Sources.MediaCapability}；请求正文累计 {engine.Bytes} 字节。受众权限以服务端为准。";
         PulseStatus.Text = engine.WhatPulseStatus;
         LyricsStatus.Text = engine.LyricStatus;
     }
