@@ -13,7 +13,7 @@ from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-app = FastAPI(title="State of Me", version="0.14.0")
+app = FastAPI(title="State of Me", version="0.15.0")
 DB = os.getenv("SOM_DB", "state.db")
 CONFIG = os.getenv("SOM_CONFIG", "config.json")
 WEB = Path(__file__).parent / "web"
@@ -261,7 +261,7 @@ async def guard(request: Request, call_next):
 def health():
     with db() as conn:
         conn.execute("SELECT 1")
-    return {"ok": True, "version": "0.14.0"}
+    return {"ok": True, "version": "0.15.0"}
 
 
 @app.post("/v1/events")
@@ -357,6 +357,9 @@ def project(cfg, audience):
                         item[field] = value
         if any(item.get(field) for field in ('app', 'music', *CONTEXT_FIELDS)):
             result.append(item)
+    if 'selected_scopes' in audience:
+        result=[scopes.project_device(item,audience['selected_scopes']) for item in result]
+        result=[item for item in result if set(item)-{'device','age_seconds','expires_in'}]
     return {"status": "available" if result else "unavailable", "devices": result, "refresh_seconds": 5, "server_time": now}
 
 
@@ -385,6 +388,8 @@ def widget_javascript():
     return FileResponse(WEB / "widget.js", media_type="text/javascript")
 
 
+from . import scopes
+scopes.configure(Event)
 from . import accounts
 accounts.install(app, db, raw_config, project, authenticate, WEB)
 

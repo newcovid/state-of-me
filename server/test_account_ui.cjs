@@ -22,7 +22,6 @@ const settle=()=>new Promise(resolve=>setImmediate(resolve));
  elements.get('dismiss-toast').onclick();assert.equal(elements.get('toast').hidden,true);
  elements.get('group-consent').checked=true;elements.get('group').value='654321';elements.get('group').oninput();
  assert.equal(elements.get('group-consent').checked,false);assert.equal(scrolls,0);
- elements.get('pair-code').value='A';elements.get('pair-code').oninput();assert.equal(scrolls,0);
  assert.equal(elements.get('device-details').open,false);
  elements.get('refresh-status').onclick();await settle();await settle();assert.equal(scrolls,0);
  assert.equal(elements.get('device-details').open,false);

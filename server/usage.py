@@ -6,6 +6,11 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from typing import Literal
 from fastapi import Header, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+from . import scopes
+
+_reader = None
+def read_history(uid, days=30, fields=None):
+    return _reader(uid,days,fields)
 
 class AppUsage(BaseModel):
     model_config = ConfigDict(extra='forbid')
@@ -59,16 +64,15 @@ class Upload(BaseModel):
             raise ValueError('Dates outside retention window or duplicated')
         return self
 
-class GroupScope(BaseModel):
-    group_id: str = Field(pattern=r'^\d{5,12}$')
-    enabled: bool
-
 def schema(c):
     c.execute('CREATE TABLE IF NOT EXISTS usage_history(device TEXT PRIMARY KEY, received REAL NOT NULL, payload TEXT NOT NULL)')
     c.execute('DELETE FROM usage_history WHERE received < ?', (time.time()-30*86400,))
 
 def install(app, db, config, authenticate, accounts):
-    def read(uid, days):
+    global _reader
+    def read(uid, days, fields=None):
+        if fields is not None and not any(x.startswith("usage_history.") for x in fields):
+            return dict(status="unavailable",devices=[],requested_days=days,server_time=time.time())
         with accounts.connection() as c:
             schema(c)
             rows = c.execute('SELECT d.id,d.label,h.received,h.payload FROM user_devices d JOIN usage_history h ON h.device=d.id WHERE d.uid=?', (uid,)).fetchall()
@@ -80,7 +84,11 @@ def install(app, db, config, authenticate, accounts):
             data['days'] = [d for d in data['days'] if date.fromisoformat(d['date']) >= cutoff]
             if data['days']:
                 result.append(dict(device=identifier, device_label=label, received_at=received, **data))
+        if fields is not None:
+            result=[scopes.project_history(device,fields) for device in result]
+            result=[device for device in result if device]
         return dict(status='available' if result else 'unavailable', devices=result, server_time=time.time(), requested_days=days)
+    _reader = read
 
     @app.post('/v1/usage')
     def upload(body: Upload, authorization: str | None = Header(default=None)):
@@ -106,19 +114,6 @@ def install(app, db, config, authenticate, accounts):
             raise HTTPException(422, 'days must be 1, 7 or 30')
         return read(uid, days)
 
-    @app.post('/v1/accounts/groups/usage')
-    def scope(body: GroupScope, request: Request):
-        uid, _ = accounts.user(request, True)
-        with accounts.connection() as c:
-            row = c.execute('SELECT fields FROM group_grants WHERE uid=? AND group_id=?', (uid, body.group_id)).fetchone()
-            if not row:
-                raise HTTPException(404, '请先绑定并授权此群')
-            fields = set(json.loads(row[0])); fields.discard('usage_history')
-            if body.enabled:
-                fields.add('usage_history')
-            c.execute('UPDATE group_grants SET fields=? WHERE uid=? AND group_id=?', (json.dumps(sorted(fields)), uid, body.group_id))
-        return {'ok': True}
-
     @app.get('/v1/bot/usage/{qq}')
     def bot(qq: str, group_id: str, request: Request, days: int = 7):
         accounts.bot_authorize(request, group_id)
@@ -129,17 +124,18 @@ def install(app, db, config, authenticate, accounts):
             if not row:
                 return {'status': 'unbound', 'devices': []}
             grant = c.execute('SELECT fields FROM group_grants WHERE uid=? AND group_id=?', (row[0], group_id)).fetchone()
-            if not grant or 'usage_history' not in json.loads(grant[0]):
+            fields = scopes.canonical(json.loads(grant[0])) if grant else []
+            if not any(x.startswith('usage_history.') for x in fields):
                 return {'status': 'not_shared', 'devices': []}
-        result = read(row[0], days)
+        result = read(row[0], days, fields)
         # Keep the agent payload bounded: full daily totals plus one ranking per device.
         for device in result['devices']:
             ranking = {}
             for day in device['days']:
-                for item in day.pop('apps'):
+                for item in day.pop('apps',[]):
                     total = ranking.setdefault(item['package'], dict(package=item['package'], label=item['label'], foreground_ms=0, sessions=0))
                     total['foreground_ms'] += item['foreground_ms']; total['sessions'] += item['sessions']
-                day.pop('hourly_screen_ms', None)
-            device['app_ranking'] = sorted(ranking.values(), key=lambda x: x['foreground_ms'], reverse=True)[:50]
-            device['ranking_limit'] = 50
+            if 'usage_history.apps' in fields:
+                device['app_ranking'] = sorted(ranking.values(), key=lambda x: x['foreground_ms'], reverse=True)[:50]
+                device['ranking_limit'] = 50
         return result

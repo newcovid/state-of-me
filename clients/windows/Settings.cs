@@ -9,6 +9,34 @@ public sealed class Settings
     public bool ConnectionInvalid { get; set; } = false;
     public string Account { get; set; } = "";
     public string ProtectedToken { get; set; } = "";
+    public string EnrollmentId { get; set; } = "";
+    public string EnrollmentEndpoint { get; set; } = "";
+    public string EnrollmentAccount { get; set; } = "";
+    public string PrepareEnrollment(string endpoint, string account)
+    {
+        if (EnrollmentId.Length == 0 || EnrollmentEndpoint != endpoint || EnrollmentAccount != account)
+        { EnrollmentId = Guid.NewGuid().ToString(); EnrollmentEndpoint = endpoint; EnrollmentAccount = account; }
+        return EnrollmentId;
+    }
+    public string NativeEndpoint { get; set; } = "";
+    public string NativeAccount { get; set; } = "";
+    public string ProtectedAccountSession { get; set; } = "";
+    public long AccountSessionExpiresAt { get; set; }
+    [System.Text.Json.Serialization.JsonIgnore]
+    public string AccountSession
+    {
+        get
+        {
+            if (NativeEndpoint != Endpoint || AccountSessionExpiresAt <= DateTimeOffset.UtcNow.ToUnixTimeSeconds()) return "";
+            try { return Encoding.UTF8.GetString(ProtectedData.Unprotect(Convert.FromBase64String(ProtectedAccountSession), Encoding.UTF8.GetBytes(NativeEndpoint), DataProtectionScope.CurrentUser)); }
+            catch { return ""; }
+        }
+        set { ProtectedAccountSession = value.Length == 0 ? "" : Convert.ToBase64String(ProtectedData.Protect(Encoding.UTF8.GetBytes(value), Encoding.UTF8.GetBytes(NativeEndpoint), DataProtectionScope.CurrentUser)); }
+    }
+    public void ClearAccountSession()
+    {
+        ProtectedAccountSession = ""; NativeAccount = ""; NativeEndpoint = ""; AccountSessionExpiresAt = 0;
+    }
     public string AppMode { get; set; } = "whitelist";
     public Dictionary<string, string> AppAliases { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     public List<string> Apps { get; set; } = new();

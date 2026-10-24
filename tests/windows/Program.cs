@@ -16,3 +16,20 @@ Console.WriteLine("WhatPulse delta and reset tests passed");
 Check(!System.Text.Json.JsonSerializer.Serialize(cfg).Contains("test-only-not-a-real-credential"),"plaintext token excluded from serialized settings");
 
 var empty=new Settings{AppMode="blacklist"};Check(empty.Permitted("Editor")&&empty.Permitted("UnlistedApp"),"empty blacklist shares all foreground apps");empty.AppMode="whitelist";Check(!empty.Permitted("Editor"),"empty whitelist shares none");
+
+var managed=new Settings{Endpoint="https://status.example.com/presence",NativeEndpoint="https://status.example.com/presence",NativeAccount="alice",AccountSessionExpiresAt=DateTimeOffset.UtcNow.AddHours(1).ToUnixTimeSeconds()};
+managed.Token="device-only-test-credential";managed.AccountSession="account-only-test-credential";
+Check(managed.AccountSession=="account-only-test-credential"&&managed.Token=="device-only-test-credential","native account and device credentials remain distinct");
+Check(!System.Text.Json.JsonSerializer.Serialize(managed).Contains("account-only-test-credential"),"native session plaintext not serialized");
+managed.Endpoint="https://another.example.com/presence";Check(managed.AccountSession=="","account session not usable for another service");
+managed.Endpoint=managed.NativeEndpoint;managed.NativeEndpoint="https://another.example.com/presence";Check(managed.AccountSession=="","modified endpoint cannot unlock DPAPI session");
+managed.NativeEndpoint=managed.Endpoint;managed.AccountSessionExpiresAt=0;Check(managed.AccountSession=="","expired account session not exposed");
+managed.ClearAccountSession();Check(managed.ProtectedAccountSession==""&&managed.Token=="device-only-test-credential","logout clears management without changing collector credential");
+Check(AccountApi.NormalizeEndpoint(" https://example.com/presence/ ")=="https://example.com/presence","normalized native endpoint");
+foreach(var invalid in new[]{"http://example.com","https://user:password@example.com","https://example.com/?token=secret","https://example.com/#account"}){bool rejected=false;try{AccountApi.NormalizeEndpoint(invalid);}catch(InvalidOperationException){rejected=true;}Check(rejected,"reject unsafe endpoint "+invalid);}
+Console.WriteLine("Native account credential separation, expiry and service binding tests passed");
+
+var enrolling = new Settings(); var enrollment = enrolling.PrepareEnrollment("https://example.test", "alice");
+Check(enrolling.PrepareEnrollment("https://example.test", "alice") == enrollment, "enrollment retries retain id");
+Check(enrolling.PrepareEnrollment("https://example.test", "bob") != enrollment, "different account gets independent enrollment");
+Console.WriteLine("Windows account isolation and enrollment idempotency tests passed");

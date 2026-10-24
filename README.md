@@ -2,7 +2,7 @@
 
 自托管的个人实时状态发布工具。免 Root Android + Windows → 独立 HTTP API → 网页 / AstrBot。
 
-**0.14 开发预览**：当前快照、白名单过滤、账号与设备隔离、群分享与公开分享独立授权、45 秒失联过期，公开访问默认关闭。
+**0.15 开发预览**：当前快照、白名单过滤、账号与设备隔离、群分享与公开分享独立授权、45 秒失联过期，公开访问默认关闭。
 
 ## 能力
 
@@ -11,17 +11,17 @@
 - Windows：WPF UI Fluent 组件、托盘、应用名称多选过滤、标准媒体与目录歌词、电源/空闲/网络/音量/资源，以及可选 WhatPulse 统计；事件合并与 20 秒保活。详见[桌面端使用与验证](docs/DESKTOP-0.10.md)。
 - FastAPI + SQLite：按受众投影、重放/乱序保护、隐身和 TTL。Android 播放事件触发更新并保留心跳；网页每 5 秒校准，页面内存缓存歌词并连续推进进度。AstrBot 以真实群事件识别查询对象并校验分享权限；“我”取实际发送者，“群主”实时查询 QQ 角色，未绑定他人不返回主人状态。
 
-- Android 使用统计：屏幕交互／解锁使用时长、解锁次数、应用排行、7／30 天趋势；系统低频补算与独立私有历史接口，群查询另行授权。详见 [统计口径与部署](docs/ANDROID-USAGE-0.14.md)。
+- Android 使用统计：屏幕交互／解锁使用时长、解锁次数、应用排行、7／30 天趋势；系统低频补算与独立私有历史接口，群查询与公开卡片分别按汇总、应用排行、小时分布授权。详见 [统计口径与部署](docs/ANDROID-USAGE-0.14.md)。
 
 ## 多用户账号
 
-手机和电脑通过短码连接账号，不必手填密钥。账号下设备隔离，群查询和公开分享分别授权；QQ 绑定以真实消息发送者为准，并由账号页面再次确认。注册、恢复码、连接与自托管配置见 [多用户使用说明](docs/MULTIUSER-0.11.md)。
+手机和电脑直接在原生客户端注册或登录，自动登记本机，无需网页配对或手填密钥。客户端和网页管理同一账号下的设备与分享范围；账号会话与采集凭据分离。QQ 验证以真实群消息发送者为准，由本人在客户端或网页确认后，为每个群选择字段并保存。公开卡片另选字段，默认全部关闭；媒体、应用、设备状态、诊断与历史统计均可按需公开。见 [0.15 多用户与部署架构](docs/MULTIUSER-0.15.md)。
 
 ## 开始
 
 [下载 Android / Windows 开发预览](https://github.com/newcovid/state-of-me/releases)；已有服务只需安装客户端并连接账号。自行搭建请从下方“安装与测试”开始，可用初始化工具生成配套配置。
 
-[内部分发说明](docs/INTERNAL-DISTRIBUTION-0.14.md) · [0.12 账号引导与验证](docs/ACCOUNT-FLOW-0.12.md) · [安装与测试](docs/QUICKSTART.md) · [开发计划](docs/PLAN-0.6.md) · [隐私和限制](docs/PRIVACY.md) · [通用性审查](docs/GENERALITY.md) · [歌词窗口协议](docs/PLAYBACK-API.md)
+[0.15 账号与分享](docs/MULTIUSER-0.15.md) · [安装与测试](docs/QUICKSTART.md) · [开发计划](docs/PLAN-0.6.md) · [隐私和限制](docs/PRIVACY.md) · [通用性审查](docs/GENERALITY.md) · [歌词窗口协议](docs/PLAYBACK-API.md)
 
 ```powershell
 python -m pip install -r server/requirements.txt
@@ -42,6 +42,6 @@ API：`POST /v1/events`、登录后可读的 `GET /v1/accounts/status`、按群�
 
 MIT License。贡献请附复现步骤和设备版本，不提交令牌、聊天记录、真实活动或私有配置。
 
-Halo 常驻公开组件：[接入说明](integrations/halo/README.md)。Android 设置按状态、连接、分享、歌词分区，支持系统深浅色。
+Halo 常驻公开组件：[接入说明](integrations/halo/README.md) · [0.15 全字段卡片说明](docs/PUBLIC-WIDGET-0.15.md)。Android 设置按状态、连接、分享、歌词分区，支持系统深浅色。
 
 0.6：博客浮动歌词卡片、Android 输入法 Insets 修复、可选电量/充电/屏幕/锁屏/省电状态（独立受众权限），音乐专辑字段。

@@ -62,7 +62,7 @@ class MainActivity : ComponentActivity() {
         var page by rememberSaveable { mutableIntStateOf(0) }
         var dialog by rememberSaveable { mutableStateOf("") }
         Scaffold(topBar = { TopAppBar(title = "State of Me", bottomContent = {
-            TabRow(minWidth = 0.dp, tabs = listOf("状态", "分享", "歌词", "连接", "统计"), selectedTabIndex = page, onTabSelected = { page = it }, modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp))
+            TabRow(minWidth = 0.dp, tabs = listOf("状态", "采集", "歌词", "账号", "统计"), selectedTabIndex = page, onTabSelected = { page = it }, modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp))
         }) }) { padding ->
             Column(Modifier.fillMaxSize().padding(padding).imePadding().verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 when (page) {
@@ -73,7 +73,7 @@ class MainActivity : ComponentActivity() {
                         } }
                         Button(onClick = {
                             val enabled = prefs.getBoolean("enabled", false)
-                            if (!enabled && (!value("url").startsWith("https://") || value("token").length < 24 || value("account").isBlank())) { page = 3; toast("请先连接账号") }
+                            if (!enabled && (!value("url").startsWith("https://") || value("token").length < 24 || value("account").isBlank() || prefs.getBoolean("connection_invalid", false))) { page = 3; toast("请先连接账号；失效的旧连接需要先断开") }
                             else {
                                 prefs.edit().putBoolean("enabled", !enabled).apply()
                                 if (!enabled && android.os.Build.VERSION.SDK_INT >= 33 && !notificationGranted() && !prefs.getBoolean("notification_requested", false)) requestNotifications()
@@ -81,7 +81,7 @@ class MainActivity : ComponentActivity() {
                             }
                         }, colors = ButtonDefaults.buttonColorsPrimary(), modifier = Modifier.fillMaxWidth()) { Text(if (prefs.getBoolean("enabled", false)) "暂停分享" else "开始分享") }
                         Note("只分享你开启的内容。暂停会清空实时状态，并尝试撤下已同步的使用统计。")
-                        Card(modifier = Modifier.fillMaxWidth()) { ArrowPreference("分享范围", summary = "选择应用与设备信息", onClick = { page = 1 }); ArrowPreference("歌词", summary = "从音乐文件夹自动匹配", onClick = { page = 2 }) }
+                        Card(modifier = Modifier.fillMaxWidth()) { ArrowPreference("本机采集", summary = "选择上传的应用与设备信息", onClick = { page = 1 }); ArrowPreference("账号与分享", summary = "管理公开信息、群授权和设备", onClick = { page = 3 }); ArrowPreference("歌词", summary = "从音乐文件夹自动匹配", onClick = { page = 2 }) }
                     }
                     1 -> {
                         Card(modifier = Modifier.fillMaxWidth()) { ArrowPreference("应用", summary = filterSummary("apps"), onClick = { dialog = "apps" }); ArrowPreference("播放器", summary = filterSummary("players"), onClick = { dialog = "players" }); ArrowPreference("所需权限", summary = permissionSummary(), onClick = { dialog = "permissions" }) }

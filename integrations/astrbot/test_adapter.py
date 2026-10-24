@@ -147,3 +147,43 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
             result=await self.adapter.get_my_status(self.event('我在干什么',sender='222222'))
         self.assertIn('没有可读取的新鲜状态',json.loads(result)['detail'])
         self.assertNotIn('检查 App',result)
+
+    async def test_partial_scopes_do_not_require_titles_labels_or_progress(self):
+        payload = {'devices': [
+            {'device': 'opaque-one', 'music': {'playing': True, 'playback_status': 'playing', 'lyric': 'only shared lyric', 'position_known': False}},
+            {'device': 'opaque-two', 'resources': {'cpu_percent': 0}, 'future_category': {'future_field': False}}]}
+        with patch('urllib.request.urlopen', return_value=io.BytesIO(json.dumps(payload).encode())):
+            result = await self.adapter.get_my_status(self.event('我在干什么'))
+        data = json.loads(result.split('\n', 1)[1])
+        self.assertEqual(data['devices'], payload['devices'])
+        self.assertNotIn('title', data['devices'][0]['music'])
+        self.assertNotIn('device_label', data['devices'][0])
+        self.assertIn('position_ms 缺失时不报进度', result)
+        self.assertIn('不能从旧对话或公开页面补全', result)
+        self.assertIn('device 是内部标识', result)
+
+    async def test_history_independent_scope_preserves_hourly_without_inventing_summary(self):
+        payload = {'status': 'available', 'devices': [{'device': 'opaque', 'sampled_at': 1000,
+                   'days': [{'date': '2026-10-24', 'known_ms': 60000, 'hourly_screen_ms': [60000]+[0]*23}]}]}
+        with patch('urllib.request.urlopen', return_value=io.BytesIO(json.dumps(payload).encode())):
+            result = await self.adapter.get_usage_history(self.event('我的手机今天每小时使用情况'), 1)
+        data = json.loads(result.split('\n', 1)[1])
+        self.assertEqual(data['devices'], payload['devices'])
+        self.assertNotIn('screen_ms', data['devices'][0]['days'][0])
+        self.assertNotIn('app_ranking', data['devices'][0])
+        self.assertIn('三个独立权限', result)
+        self.assertIn('不代表设备在线', result)
+
+    async def test_denied_history_guides_native_field_grants_without_rebinding(self):
+        with patch('urllib.request.urlopen', return_value=io.BytesIO(b'{"status":"not_shared","devices":[]}')):
+            result = json.loads(await self.adapter.get_usage_history(self.event('我今天用了多久手机'), 1))
+        self.assertIn('Windows', result['detail'])
+        self.assertIn('已验证 QQ 无需重新绑定', result['detail'])
+        self.assertIn('公开卡片权限彼此独立', result['detail'])
+
+    async def test_agent_context_distinguishes_group_and_public_authorization(self):
+        request = types.SimpleNamespace(system_prompt='existing persona')
+        await self.adapter.identity_context(self.event('我在干什么'), request)
+        self.assertTrue(request.system_prompt.startswith('existing persona'))
+        self.assertIn('公开网页的权限不能替代群权限', request.system_prompt)
+        self.assertIn('新增群验证后默认无数据权限', request.system_prompt)

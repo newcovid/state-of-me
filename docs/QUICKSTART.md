@@ -1,10 +1,10 @@
-# 从零安装 State of Me 0.12
+# 从零安装 State of Me 0.15
 
 ## 只使用别人已搭好的服务
 
-到 [GitHub Releases](https://github.com/newcovid/state-of-me/releases) 选择最新 **0.12 开发预览**：Android 安装 `state-of-me-0.12.0.apk`（Android 8+）；Windows 10/11 x64 下载并解压 `state-of-me-windows-0.12.0-win-x64.zip`，运行 `StateOfMe.exe`，自包含包无需另装 .NET。更新 Windows 前从旧版托盘正常退出，再运行新版本。
+获取维护者提供的 **0.15 开发预览** 安装包（公开发行包以 [GitHub Releases](https://github.com/newcovid/state-of-me/releases) 实际发布为准）：Android 安装 `state-of-me-0.15.0.apk`（Android 8+）；Windows 10/11 x64 下载并解压 `state-of-me-windows-0.15.0-win-x64.zip`，运行 `StateOfMe.exe`，自包含包无需另装 .NET。更新 Windows 前从旧版托盘正常退出，再运行新版本。
 
-向维护者索取 HTTPS 服务地址，在客户端“连接”页填写后点“连接账号 / 注册”，按浏览器提示注册、保存恢复码、核对设备，再返回客户端确认账号。先选择应用/播放器和可选信息，再开始分享。具体 QQ 绑定和权限操作见 [多用户使用说明](MULTIUSER-0.12.md)。客户端默认不填写服务器；现有安装保留原地址与连接。
+向维护者索取 HTTPS 服务地址，在客户端的账号入口填写地址，直接注册或登录。新注册先保存恢复码，再添加本机；已有账号登录自动登记或复用本人设备。选择本机应用、播放器和可选信息并开始分享后，再为群或公开访客选择分享字段。QQ 验证、找回密码和设备管理都可在客户端完成，网页是可选的另一管理入口。见 [多用户使用说明](MULTIUSER-0.15.md)。客户端默认不填写服务器。0.15 不再提供旧版短码设备配对入口，需将客户端、后端和插件一并升级。
 
 ## 自建服务：Linux + Docker Compose
 
@@ -18,7 +18,7 @@ python3 deploy/init_config.py --url https://status.example.com
 
 **将示例 URL 替换为自己的地址。** 已有 QQ 群时可添加 `--group 123456789`，多个群重复该参数。工具会生成：
 
-- `deploy/config.json`：启用账号注册，静态设备/读者为空，公开默认关闭，自动填写正确 `origin`。
+- `deploy/config.json`：启用账号注册，公开默认关闭，自动填写正确 `origin`。
 - 指定群时另生成 `deploy/astrbot-state-of-me.json`：与后端配套的独立机器人服务凭据。无需手工复制或生成群密钥。
 
 工具拒绝覆盖已有配置。已有实例应保留账号数据库与配置，不要重初始化。生成文件不应提交 Git；工具只输出文件路径，不打印凭据。
@@ -43,10 +43,18 @@ Caddy 独立域名示例（替换域名）：
 
 ```caddyfile
 status.example.com {
-    request_body {
-        max_size 16KiB
+    handle /v1/usage {
+        request_body {
+            max_size 1MiB
+        }
+        reverse_proxy 127.0.0.1:8080
     }
-    reverse_proxy 127.0.0.1:8080
+    handle {
+        request_body {
+            max_size 16KiB
+        }
+        reverse_proxy 127.0.0.1:8080
+    }
 }
 ```
 
@@ -55,25 +63,33 @@ status.example.com {
 ```caddyfile
 redir /presence /presence/ 308
 handle_path /presence/* {
-    request_body {
-        max_size 16KiB
+    handle /v1/usage {
+        request_body {
+            max_size 1MiB
+        }
+        reverse_proxy 127.0.0.1:8080
     }
-    reverse_proxy 127.0.0.1:8080
+    handle {
+        request_body {
+            max_size 16KiB
+        }
+        reverse_proxy 127.0.0.1:8080
+    }
 }
 ```
 
 代理示例依据 Caddy 官方 [handle_path](https://caddyserver.com/docs/caddyfile/directives/handle_path) 与 [request_body](https://caddyserver.com/docs/caddyfile/directives/request_body) 文档。
 
-后端没有硬编码部署前缀。客户端、AstrBot `url` 必须包含你实际使用的 `/presence`；`accounts.origin` 只包含 `https://example.com`，初始化工具已自动处理。不要缓存账号、配对或状态响应。
+后端没有硬编码部署前缀。客户端、AstrBot `url` 必须包含你实际使用的 `/presence`；`accounts.origin` 只包含 `https://example.com`，初始化工具已自动处理。不要缓存账号、设备登记或状态响应。`POST /v1/usage` 为历史统计批量上传，允许 1 MiB；其余请求限制 16 KiB。不要把整个站点的限额统一提高。
 
 **如果 Caddy 本身在容器里**，`127.0.0.1` 是代理容器自己。请将代理和 State of Me 加入同一个 Docker 网络，代理到 `state-of-me:8080`，而非照抄宿主机目标。不要把明文写入端口直接开放到公网。
 
 ### 第一次验收
 
-1. 打开 `https://status.example.com/account`（子路径则 `/presence/account`），注册第一个账号。应无需手填任何设备令牌。
-2. 客户端短码配对，网页及客户端均核对账号。完成后默认暂停。
-3. 选择至少一个应用或播放器并开始分享，账号页“刷新状态”应显示自己的设备。
-4. 新账号的公开链接应返回未开启公开；显式开启后才可查看。
+1. 在 Android 或 Windows 的原生账号入口填写服务地址，注册第一个账号并保存恢复码。
+2. 添加本机，确认账号与设备列表；设备上传凭据由服务签发，无需用户复制。完成后默认暂停。
+3. 选择至少一个应用或播放器并开始分享，客户端状态及可选网页账号页应显示自己的设备。
+4. 新账号的公开链接应返回未开启公开；选择具体公开字段并保存后才可查看。
 5. 第二个账号应看不到第一个账号的设备。网页撤销设备后，该客户端提示连接失效。
 
 无 QQ 群时注册、设备和公开页面完全可用；账号页会说明暂未开放群绑定。
@@ -88,7 +104,7 @@ handle_path /presence/* {
 
 ## Windows
 
-短码连接后在分享页选择应用，在媒体页选择播放器。可选托盘常驻、登录 Windows 时启动、活跃/空闲、电源、网络、声音、资源、屏幕和 WhatPulse。WhatPulse 未安装或 API 未启用不会阻止其他采集；仅开启该项时访问 `127.0.0.1` 的配置端口。凭据使用 Windows 当前用户 DPAPI 保存，不要求每次启动重新输入。
+原生账号登录并登记后在分享页选择应用，在媒体页选择播放器。可选托盘常驻、登录 Windows 时启动、活跃/空闲、电源、网络、声音、资源、屏幕和 WhatPulse。WhatPulse 未安装或 API 未启用不会阻止其他采集；仅开启该项时访问 `127.0.0.1` 的配置端口。凭据使用 Windows 当前用户 DPAPI 保存，不要求每次启动重新输入。
 
 关闭窗口保留托盘运行；托盘“退出”会停止并清空分享。详细能力见 [桌面端说明](DESKTOP-0.10.md)，当前连接步骤以本页为准。
 
@@ -122,13 +138,15 @@ AstrBot `state-of-me.json`：
 }
 ```
 
-重载插件；若人格使用工具白名单，在目标群人格启用 `get_my_status`。真实“我”、@对象和群主由插件/QQ API 解析。群友在账号页生成 `/状态绑定 XXXXXXXX`，在相应群发送，再回网页核对真实 QQ 和群号并确认。`/状态绑定` 使用精确匹配，可直接发送，无需额外唤醒前缀。网页允许输入群号，服务端仍校验此群已配置接入。
+重载插件；若人格使用工具白名单，在目标群人格启用 `get_my_status` 和 `get_usage_history`。真实“我”、@对象和群主由插件/QQ API 解析。群友在客户端或网页的“QQ 群分享”输入群号并生成 `/状态绑定 XXXXXXXX`，在相应群发送，再回到同一管理入口刷新、核对真实 QQ 和群号并确认。新群确认后范围为空，必须选择字段并保存后机器人才可读取。`/状态绑定` 使用精确匹配，可直接发送，无需额外唤醒前缀。客户端和网页均允许输入群号，服务端仍校验此群已配置接入。
 
-添加或移除群需同步维护两份私有配置。不要把机器人服务凭据提供给群友；他们只需要一次性绑定码。其他平台尚需另做身份适配。
+添加或移除群需同步维护两份私有配置。不要把机器人服务凭据提供给群友；他们只需要自己的账号与一次性 QQ 验证命令。其他平台尚需另做身份适配。
 
 ## 博客与升级维护
 
 Halo 或其他博客见 [完整组件嵌入示例](../integrations/halo/README.md)，可以只展示指定账号已经公开的状态。
+
+0.15 为开发预览架构升级，不支持旧设备短码配对、旧大类权限请求和旧客户端自动兼容。维护者应同步更新后端、客户端、AstrBot 和卡片脚本；既有实例先备份并在副本验证，不能把升级当作数据迁移保证。
 
 升级前备份配置和数据库。小型部署可选择短暂停机备份，保证 SQLite 一致性：
 
