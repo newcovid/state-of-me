@@ -16,7 +16,7 @@ if(-not(Test-Path -LiteralPath $source)){Invoke-WebRequest 'https://github.com/m
 if((Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash -ne 'C96834A945369E07F9018959E38DAFD3769237AEC8BA3FFB2F460644DA081A4E'){throw 'TagLib source checksum mismatch'}
 tar -xOf $source taglib-sharp-TaglibSharp-2.3.0.0/COPYING | Set-Content -LiteralPath (Join-Path $licenseDir 'TagLibSharp-LGPL-2.1.txt') -Encoding utf8
 if($LASTEXITCODE -ne 0){throw 'License extraction failed'}
-Copy-Item -LiteralPath (Join-Path $repoRoot 'docs/DESKTOP-0.10.md') -Destination (Join-Path $OutputDirectory 'README.zh-CN.md')
+Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'README.md') -Destination (Join-Path $OutputDirectory 'README.zh-CN.md')
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'THIRD-PARTY.md') -Destination $OutputDirectory
 Copy-Item -LiteralPath (Join-Path $repoRoot 'LICENSE') -Destination $OutputDirectory
 $runtime=Get-Content (Join-Path $OutputDirectory 'StateOfMe.runtimeconfig.json') -Raw | ConvertFrom-Json

@@ -1,0 +1,17 @@
+# State of Me Windows 0.11 开发预览
+
+适用 Windows 10/11 x64。此发行包包含运行时，不必另装 .NET。
+
+1. 更新时先在旧版本托盘菜单选择“退出”，再解压并运行 `StateOfMe.exe`。原配置会保留。
+2. 新用户在“连接”页填写维护者提供的 HTTPS 服务地址，点击“连接账号 / 注册”。
+3. 在浏览器注册/登录，保存恢复码，核对设备；返回客户端核对账号并确认连接。
+4. 在“分享”页选择应用和需要的信息，在“媒体”页选择播放器；点击“保存并开始分享”。新连接默认暂停。
+5. 群查询、QQ 绑定与公开范围在“管理账号与 QQ 绑定”页面设置。公开和群权限默认关闭。
+
+窗口关闭后留在托盘继续运行。暂停分享会清空当前状态；“断开此设备”会停止分享并清除旧账号的本地采集选择、手动状态和歌词目录索引，音乐文件保留。
+
+可选 WhatPulse 仅使用本机 API，不安装或不开启该项也可以正常使用。长期凭据使用 Windows 当前用户 DPAPI 保存。旧版令牌在高级连接区域继续兼容。
+
+完整说明：[快速入门](https://github.com/newcovid/state-of-me/blob/main/docs/QUICKSTART.md) · [多用户与隐私范围](https://github.com/newcovid/state-of-me/blob/main/docs/MULTIUSER-0.11.md) · [开源项目](https://github.com/newcovid/state-of-me)
+
+发布包附第三方许可。TagLibSharp 对应源码由同一 Release 单独提供。此版本仍为开发预览。
