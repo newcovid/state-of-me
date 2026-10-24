@@ -2,6 +2,8 @@ import asyncio
 import importlib.util
 import io
 import json
+import re
+import urllib.error
 import sys
 import types
 import unittest
@@ -9,9 +11,24 @@ from unittest.mock import patch, AsyncMock
 
 
 class AdapterTests(unittest.IsolatedAsyncioTestCase):
+    def test_binding_route_is_exact_and_independent_of_slash_prefix(self):
+        for text in ('/状态绑定 ABCD2345', '状态绑定 ABCD2345', '状态绑定', '/状态绑定\tABCD2345'):
+            self.assertIsNotNone(re.fullmatch(self.m.BIND_PATTERN, text))
+        for text in ('解释状态绑定是什么意思', '搜索 /状态绑定 ABCD2345', '/状态绑定 ABCD2345 extra', '状态绑定其他命令'):
+            self.assertIsNone(re.fullmatch(self.m.BIND_PATTERN, text))
+
+    async def test_binding_error_explains_expired_code(self):
+        event=self.event('/状态绑定 ABCD2345')
+        event.stop_event=lambda:None
+        event.plain_result=lambda text:text
+        error=urllib.error.HTTPError('https://example.com',404,'expired',{},None)
+        with patch('urllib.request.urlopen',side_effect=error):
+            output=[r async for r in self.adapter.bind_account(event)]
+        self.assertIn('重新生成',output[0])
+
     def setUp(self):
         event_module=types.ModuleType('astrbot.api.event')
-        event_module.filter=types.SimpleNamespace(command=lambda *a,**k:lambda f:f, on_llm_request=lambda **k:lambda f:f, llm_tool=lambda **k:lambda f:f)
+        event_module.filter=types.SimpleNamespace(command=lambda *a,**k:lambda f:f, regex=lambda *a,**k:lambda f:f, on_llm_request=lambda **k:lambda f:f, llm_tool=lambda **k:lambda f:f)
         event_module.AstrMessageEvent=object
         star_module=types.ModuleType('astrbot.api.star')
         star_module.Context=object
@@ -41,7 +58,7 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
         event.stop_event=__import__('unittest.mock',fromlist=['Mock']).Mock()
         event.plain_result=lambda text:text
         with patch('urllib.request.urlopen',return_value=io.BytesIO(b'{"detail":"confirm in browser"}')) as network:
-            output=[r async for r in self.adapter.bind_account(event,'ABCD2345')]
+            output=[r async for r in self.adapter.bind_account(event)]
             body=json.loads(network.call_args.args[0].data)
             self.assertEqual(body,{'code':'ABCD2345','group_id':'123456','qq':'111111'})
             event.stop_event.assert_called_once();self.assertEqual(output,['confirm in browser'])

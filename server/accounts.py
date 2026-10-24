@@ -320,7 +320,7 @@ def install(app, db, config, project, authenticate, web):
         if not body.consent:
             raise HTTPException(400, '请先确认允许本群查询基本状态')
         if body.group_id not in raw_config().get('accounts', {}).get('bot_groups', {}):
-            raise HTTPException(400, '此群尚未接入')
+            raise HTTPException(400, '此群尚未接入本服务，请联系机器人维护者添加该群后重试')
         code = short_code()
         with connection() as c:
             c.execute('DELETE FROM bind_codes WHERE expires<? OR uid=?', (time.time(), uid))

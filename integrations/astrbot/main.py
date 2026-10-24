@@ -3,10 +3,13 @@ import re
 import json
 import os
 import urllib.request
+import urllib.error
 import asyncio
 from astrbot.api.event import filter, AstrMessageEvent
 from astrbot.api.star import Context, Star, register
 from .identity import resolve_subject
+
+BIND_PATTERN = r'^/?状态绑定(?:\s+\S+)?\s*$'
 
 
 def specific_question(text):
@@ -44,15 +47,17 @@ def configuration():
         return json.load(f)
 
 
-@register("state_of_me", "State of Me contributors", "Read identity-bound personal presence", "0.12.0")
+@register("state_of_me", "State of Me contributors", "Read identity-bound personal presence", "0.12.1")
 class StateOfMe(Star):
     def __init__(self, context: Context):
         super().__init__(context)
 
-    @filter.command("状态绑定")
-    async def bind_account(self, event: AstrMessageEvent, code: str = ""):
+    @filter.regex(BIND_PATTERN)
+    async def bind_account(self, event: AstrMessageEvent):
         """Bind only the authenticated QQ sender, never an LLM-supplied identity."""
         event.stop_event()
+        parts = event.message_str.strip().split()
+        code = parts[1] if len(parts) == 2 else ''
         cfg = configuration()
         group = str(event.get_group_id())
         binding = cfg.get('groups', {}).get(group, {})
@@ -74,6 +79,19 @@ class StateOfMe(Star):
         try:
             result = await asyncio.to_thread(submit)
             yield event.plain_result(result['detail'])
+        except urllib.error.HTTPError as error:
+            error.close()
+            if error.code == 404:
+                detail = '绑定码已过期、输入错误或不属于此群。请在账号页为本群重新生成。'
+            elif error.code == 409:
+                detail = '此绑定码已提交过其他 QQ。请在账号页重新生成，不要使用别人转发的命令。'
+            elif error.code in (401, 403):
+                detail = '本群的状态服务接入配置不可用，请联系机器人维护者。'
+            elif error.code == 429:
+                detail = '提交过于频繁，请稍后重试。'
+            else:
+                detail = '状态服务暂时不可用，请稍后重试。'
+            yield event.plain_result(detail)
         except Exception:
             yield event.plain_result('绑定没有完成，请检查绑定码、所属群和有效期后重试。')
 

@@ -50,6 +50,16 @@ class AccountTests(unittest.TestCase):
         self.assertIn("style-src 'self'", page.headers['content-security-policy'])
         self.assertNotIn('<style', page.text)
         self.assertIn('.account-page .next-step', self.x.get('/style.css').text)
+
+    def test_entered_group_must_be_connected_before_consent(self):
+        response = self.x.post('/v1/accounts/bind-code',json={'group_id':'777777','consent':True})
+        self.assertEqual(response.status_code,400)
+        self.assertIn('维护者',response.json()['detail'])
+        response = self.x.post('/v1/accounts/bind-code',json={'group_id':'654321','consent':True})
+        self.assertEqual(response.status_code,200)
+        code=response.json()['code']
+        # A different group's service credential cannot claim this typed group.
+        self.assertEqual(self.x.post('/v1/bot/bind',headers=self.bot,json={'group_id':'654321','code':code,'qq':'333333'}).status_code,401)
     def test_pair_secret_account_and_revocation(self):
         p=self.x.post('/v1/pairings',json={'label':'Laptop','platform':'windows'}).json()
         self.assertEqual(self.x.post('/v1/pairings/approve',json={'code':p['code'],'account':'bob'}).status_code,409)
