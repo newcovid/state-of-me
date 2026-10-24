@@ -33,3 +33,20 @@ var enrolling = new Settings(); var enrollment = enrolling.PrepareEnrollment("ht
 Check(enrolling.PrepareEnrollment("https://example.test", "alice") == enrollment, "enrollment retries retain id");
 Check(enrolling.PrepareEnrollment("https://example.test", "bob") != enrollment, "different account gets independent enrollment");
 Console.WriteLine("Windows account isolation and enrollment idempotency tests passed");
+
+var pausedCollector = new Settings { Enabled = false, Account = "alice", Endpoint = "https://example.test", ManualText = "intentional status", ManualUntil = 999, AutoStart = true };
+pausedCollector.Token = "device-test-credential-for-isolation";
+var choices = new CollectionOptions { AppMode = "blacklist", Apps = new() { "hidden" }, Music = true, WhatPulse = true, WhatPulsePort = 3490, IdleMinutes = 5 };
+choices.ApplyTo(pausedCollector);
+Check(!pausedCollector.Enabled, "saving collection does not start a paused collector");
+Check(pausedCollector.AutoStart && pausedCollector.ManualText == "intentional status" && pausedCollector.ManualUntil == 999, "collection changes preserve startup and manual status");
+Check(pausedCollector.Account == "alice" && pausedCollector.Token == "device-test-credential-for-isolation", "collection changes preserve account and device ownership");
+Check(pausedCollector.AppMode == "blacklist" && pausedCollector.Apps.SequenceEqual(new[] { "hidden" }) && pausedCollector.Music, "collection draft is applied");
+pausedCollector.Enabled = true; choices.ApplyTo(pausedCollector); Check(pausedCollector.Enabled, "saving collection preserves active sync intent");
+Console.WriteLine("Collection ownership and explicit synchronization intent tests passed");
+
+var audienceDraft = ScopeDraft.Capture(new[] { "music.title" }, new[] { "music.title", "music.lyric" }, 4);
+Check(audienceDraft != null && audienceDraft.Revision == 4, "dirty audience retains original server revision");
+Check(audienceDraft!.Fields.SetEquals(new[] { "music.title", "music.lyric" }), "draft preserves selected fields across other audience refresh");
+Check(ScopeDraft.Capture(new[] { "music.title" }, new[] { "music.title" }, 8) == null, "clean audience may accept refreshed revision");
+Console.WriteLine("Audience draft preservation and revision ownership tests passed");

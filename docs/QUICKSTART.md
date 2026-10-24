@@ -1,10 +1,12 @@
-# 从零安装 State of Me 0.15
+# 从零安装 State of Me
 
 ## 只使用别人已搭好的服务
 
-获取维护者提供的 **0.15 开发预览** 安装包（公开发行包以 [GitHub Releases](https://github.com/newcovid/state-of-me/releases) 实际发布为准）：Android 安装 `state-of-me-0.15.0.apk`（Android 8+）；Windows 10/11 x64 下载并解压 `state-of-me-windows-0.15.0-win-x64.zip`，运行 `StateOfMe.exe`，自包含包无需另装 .NET。更新 Windows 前从旧版托盘正常退出，再运行新版本。
+获取维护者提供的 **0.16 客户端开发预览** 安装包（公开发行包以 [GitHub Releases](https://github.com/newcovid/state-of-me/releases) 实际发布为准）：Android 安装 `state-of-me-0.16.0.apk`（Android 8+）；Windows 10/11 x64 下载并解压 `state-of-me-windows-0.16.0-win-x64.zip`，运行 `StateOfMe.exe`，自包含包无需另装 .NET。更新 Windows 前从旧版托盘正常退出，再运行新版本。
 
-向维护者索取 HTTPS 服务地址，在客户端的账号入口填写地址，直接注册或登录。新注册先保存恢复码，再添加本机；已有账号登录自动登记或复用本人设备。选择本机应用、播放器和可选信息并开始分享后，再为群或公开访客选择分享字段。QQ 验证、找回密码和设备管理都可在客户端完成，网页是可选的另一管理入口。见 [多用户使用说明](MULTIUSER-0.15.md)。客户端默认不填写服务器。0.15 不再提供旧版短码设备配对入口，需将客户端、后端和插件一并升级。
+向维护者索取 HTTPS 服务地址，在客户端“设置”页填写地址，直接注册或登录。新注册先保存恢复码，再添加本机；已有账号登录自动登记或复用本人设备。选择本机应用、播放器和可选信息并开始分享后，再为群或公开访客选择分享字段。QQ 验证、找回密码和设备管理都可在客户端完成，网页是可选的另一管理入口。见 [多用户使用说明](MULTIUSER-0.15.md)。客户端默认不填写服务器。0.15 不再提供旧版短码设备配对入口，需将客户端、后端和插件一并升级。
+
+客户端 0.16 继续使用服务端 0.15 的账号与字段授权协议，无需为界面更新重新部署后端。四页使用方式见 [客户端布局](CLIENT-UX-0.16-PLAN.md)。
 
 ## 自建服务：Linux + Docker Compose
 

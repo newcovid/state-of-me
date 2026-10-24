@@ -9,8 +9,8 @@ android {
         applicationId = "io.github.stateofme"
         minSdk = 26
         targetSdk = 35
-        versionCode = 15
-        versionName = "0.15.0"
+        versionCode = 16
+        versionName = "0.16.0"
     }
     sourceSets.getByName("main") {
         manifest.srcFile("AndroidManifest.xml")
@@ -38,6 +38,7 @@ kotlin {
 dependencies {
     implementation("androidx.activity:activity-compose:1.13.0")
     implementation("top.yukonga.miuix.kmp:miuix-ui-android:0.9.4")
+    implementation("top.yukonga.miuix.kmp:miuix-icons-android:0.9.4")
     implementation("top.yukonga.miuix.kmp:miuix-preference-android:0.9.4")
     implementation("org.jetbrains.compose.foundation:foundation-android:1.12.0")
 }

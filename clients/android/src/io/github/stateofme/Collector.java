@@ -13,6 +13,15 @@ import java.util.*;
 import java.util.concurrent.*;
 
 public class Collector extends Service {
+ public static final class UiPreview {
+  public final String json; public final long at;
+  private UiPreview(String json,long at){this.json=json;this.at=at;}
+ }
+ private static volatile UiPreview uiPreview=new UiPreview("",0);
+ public static UiPreview getUiPreview(){return uiPreview;}
+ private static void clearUiPreview(){uiPreview=new UiPreview("",0);}
+
+
  final Map<MediaSession.Token,MediaController> watched=new HashMap<>();
  ScheduledFuture<?> pending,tick;long completedAt;
  final PublishPolicy policy=new PublishPolicy();
@@ -43,7 +52,7 @@ public class Collector extends Service {
   @Override public void onAvailable(Network network){connectionChanged();}
   @Override public void onLost(Network network){contextDirty=true;requestUpdate();}
  };
- void connectionChanged(){
+ void connectionChanged(){clearUiPreview();
    if(executor==null||executor.isShutdown())return;
    try{executor.execute(()->{contextDirty=true;policy.reconnect();if(pending!=null){pending.cancel(false);pending=null;}requestUpdate();});}catch(RejectedExecutionException ignored){}
  }
@@ -95,7 +104,7 @@ public class Collector extends Service {
  @Override public void onCreate(){super.onCreate();prefs=getSharedPreferences("som",0);NotificationManager nm=getSystemService(NotificationManager.class);nm.createNotificationChannel(new NotificationChannel("sharing","状态分享",NotificationManager.IMPORTANCE_LOW));
   PendingIntent open=PendingIntent.getActivity(this,0,new Intent(this,MainActivity.class),PendingIntent.FLAG_IMMUTABLE);
   PendingIntent stop=PendingIntent.getService(this,1,new Intent(this,Collector.class).setAction("stop"),PendingIntent.FLAG_IMMUTABLE);
-  Notification n=new Notification.Builder(this,"sharing").setSmallIcon(android.R.drawable.ic_menu_info_details).setContentTitle("State of Me 正在分享允许的状态").setContentText("点击查看权限和过滤；暂停会清空状态").setContentIntent(open).addAction(new Notification.Action.Builder(null,"暂停",stop).build()).setOngoing(true).build();startForeground(1,n);executor=Executors.newSingleThreadScheduledExecutor();
+  Notification n=new Notification.Builder(this,"sharing").setSmallIcon(android.R.drawable.ic_menu_info_details).setContentTitle("State of Me 正在同步允许的状态").setContentText("点击查看权限和过滤；暂停会清空状态").setContentIntent(open).addAction(new Notification.Action.Builder(null,"暂停",stop).build()).setOngoing(true).build();startForeground(1,n);executor=Executors.newSingleThreadScheduledExecutor();
   prefs.registerOnSharedPreferenceChangeListener(preferences);
   IntentFilter filter=new IntentFilter();
   for(String action:new String[]{Intent.ACTION_SCREEN_ON,Intent.ACTION_SCREEN_OFF,Intent.ACTION_USER_PRESENT,Intent.ACTION_BATTERY_CHANGED,PowerManager.ACTION_POWER_SAVE_MODE_CHANGED})filter.addAction(action);
@@ -104,7 +113,7 @@ public class Collector extends Service {
   getSystemService(ConnectivityManager.class).registerDefaultNetworkCallback(networkEvents);networkRegistered=true;
   registerSessions();
  }
- @Override public int onStartCommand(Intent i,int flags,int id){if(i!=null&&"stop".equals(i.getAction())){stopping=true;prefs.edit().putBoolean("enabled",false).apply();executor.execute(()->{send(true);stopForeground(STOP_FOREGROUND_REMOVE);stopSelf();});}else if(!prefs.getBoolean("enabled",false)){stopSelf();}else if(!started){started=true;requestUpdate();}return START_NOT_STICKY;}
+ @Override public int onStartCommand(Intent i,int flags,int id){if(i!=null&&"stop".equals(i.getAction())){stopping=true;clearUiPreview();prefs.edit().putBoolean("enabled",false).apply();executor.execute(()->{send(true);stopForeground(STOP_FOREGROUND_REMOVE);stopSelf();});}else if(!prefs.getBoolean("enabled",false)){stopSelf();}else if(!started){started=true;requestUpdate();}return START_NOT_STICKY;}
  boolean allowed(String list,String item){return AppFilter.allows(prefs.getString(list+"_mode","whitelist"),prefs.getString(list,""),prefs.getString(list+"_blocked",""),prefs.getString(list+"_candidates",""),item);}
 
  String trim(String s,int n){if(s==null)return "";return s.substring(0,Math.min(n,s.length()));}
@@ -184,8 +193,9 @@ public class Collector extends Service {
     try(OutputStream out=conn.getOutputStream()){out.write(body);}code=conn.getResponseCode();
     InputStream response=code>=400?conn.getErrorStream():conn.getInputStream();if(response!=null)try(InputStream in=response){byte[] buffer=new byte[1024];int total=0,n;while((n=in.read(buffer))!=-1){total+=n;if(total>16384)break;}}
    }finally{conn.disconnect();}
-   if(code==401){prefs.edit().putBoolean("enabled",false).putBoolean("connection_invalid",true).putString("status","连接已失效，请在连接页断开旧设备后重新连接").apply();stopSelf();return;}
+   if(code==401){clearUiPreview();prefs.edit().putBoolean("enabled",false).putBoolean("connection_invalid",true).putString("status","连接已失效，请在设置页断开旧设备后重新连接").apply();stopSelf();return;}
    if(code==200){
+    if(hidden)clearUiPreview();else{uiPreview=new UiPreview(e.toString(),SystemClock.elapsedRealtime());}
     long lyricDelay=Long.MAX_VALUE;
     if(payloadMusic!=null){lastSentTrack=payloadMusic.optString("track_id");lastSentPosition=payloadMusic.optLong("position_ms");lastSentRate=payloadMusic.optDouble("playback_rate",1);lastSentAt=monotonic;
      JSONObject w=payloadMusic.optJSONObject("lyric_window");if(w!=null)lyricDelay=PublishPolicy.lyricDelay(lastSentPosition,w.optLong("end_ms"),lastSentRate);
@@ -205,5 +215,5 @@ public class Collector extends Service {
  }
  @Override public IBinder onBind(Intent i){return null;}
  @Override protected void dump(FileDescriptor fd,PrintWriter out,String[] args){out.println("collections="+collections+" uploads="+uploads+" skipped="+skipped+" payload_bytes="+uploadedBytes+" usage_queries="+usageQueries+" usage_events="+usageEvents);}
- @Override public void onDestroy(){stopping=true;prefs.unregisterOnSharedPreferenceChangeListener(preferences);if(receiverRegistered)unregisterReceiver(stateEvents);if(networkRegistered)getSystemService(ConnectivityManager.class).unregisterNetworkCallback(networkEvents);if(sessionsRegistered)getSystemService(MediaSessionManager.class).removeOnActiveSessionsChangedListener(sessions);watchAll(Collections.emptyList());if(executor!=null)executor.shutdownNow();super.onDestroy();}
+ @Override public void onDestroy(){stopping=true;clearUiPreview();prefs.unregisterOnSharedPreferenceChangeListener(preferences);if(receiverRegistered)unregisterReceiver(stateEvents);if(networkRegistered)getSystemService(ConnectivityManager.class).unregisterNetworkCallback(networkEvents);if(sessionsRegistered)getSystemService(MediaSessionManager.class).removeOnActiveSessionsChangedListener(sessions);watchAll(Collections.emptyList());if(executor!=null)executor.shutdownNow();super.onDestroy();}
 }

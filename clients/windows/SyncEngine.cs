@@ -136,7 +136,7 @@ public sealed class SyncEngine : IDisposable
             Updated?.Invoke();
             if (string.IsNullOrWhiteSpace(cfg.Endpoint) || cfg.Token.Length < 24 || string.IsNullOrWhiteSpace(cfg.Account))
             {
-                Status = "请在连接页连接账号";
+                Status = "请在设置页登录并连接本机";
                 return;
             }
             var key = Fingerprint(data);

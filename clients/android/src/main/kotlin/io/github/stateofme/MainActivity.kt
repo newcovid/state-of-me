@@ -21,6 +21,10 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.Saver
+import androidx.compose.ui.platform.LocalDensity
+import top.yukonga.miuix.kmp.icon.MiuixIcons
+import top.yukonga.miuix.kmp.icon.extended.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
@@ -61,99 +65,136 @@ class MainActivity : ComponentActivity() {
         val refresh = revision
         var page by rememberSaveable { mutableIntStateOf(0) }
         var dialog by rememberSaveable { mutableStateOf("") }
-        Scaffold(topBar = { TopAppBar(title = "State of Me", bottomContent = {
-            TabRow(minWidth = 0.dp, tabs = listOf("状态", "采集", "歌词", "账号", "统计"), selectedTabIndex = page, onTabSelected = { page = it }, modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp))
-        }) }) { padding ->
-            Column(Modifier.fillMaxSize().padding(padding).imePadding().verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        var overview by rememberSaveable { mutableIntStateOf(0) }
+        val scrolls = List(5) { rememberScrollState() }
+        val pages = listOf("概览", "采集", "分享", "设置")
+        val icons = listOf(MiuixIcons.Home, MiuixIcons.VerticalSplit, MiuixIcons.Contacts, MiuixIcons.Settings)
+        val keyboardVisible = WindowInsets.ime.getBottom(LocalDensity.current) > 0
+        Scaffold(topBar = { SmallTopAppBar(title = pages[page]) }, bottomBar = {
+            if (!keyboardVisible) NavigationBar {
+                pages.forEachIndexed { index, label -> NavigationBarItem(selected = page == index, onClick = { page = index }, icon = icons[index], label = label) }
+            }
+        }) { padding ->
+            val scroll = scrolls[if (page == 0 && overview == 1) 4 else page]
+            Column(Modifier.fillMaxSize().padding(padding).imePadding().verticalScroll(scroll).padding(horizontal = 16.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 when (page) {
                     0 -> {
-                        Card(modifier = Modifier.fillMaxWidth()) { Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                            Text(if (prefs.getBoolean("enabled", false)) "正在分享" else "已暂停")
-                            Text(value("status", "选择分享范围后即可开始"))
-                        } }
-                        Button(onClick = {
-                            val enabled = prefs.getBoolean("enabled", false)
-                            if (!enabled && (!value("url").startsWith("https://") || value("token").length < 24 || value("account").isBlank() || prefs.getBoolean("connection_invalid", false))) { page = 3; toast("请先连接账号；失效的旧连接需要先断开") }
-                            else {
-                                prefs.edit().putBoolean("enabled", !enabled).apply()
-                                if (!enabled && android.os.Build.VERSION.SDK_INT >= 33 && !notificationGranted() && !prefs.getBoolean("notification_requested", false)) requestNotifications()
-                                startForegroundService(Intent(this@MainActivity, Collector::class.java).apply { if (enabled) action = "stop" })
-                            }
-                        }, colors = ButtonDefaults.buttonColorsPrimary(), modifier = Modifier.fillMaxWidth()) { Text(if (prefs.getBoolean("enabled", false)) "暂停分享" else "开始分享") }
-                        Note("只分享你开启的内容。暂停会清空实时状态，并尝试撤下已同步的使用统计。")
-                        Card(modifier = Modifier.fillMaxWidth()) { ArrowPreference("本机采集", summary = "选择上传的应用与设备信息", onClick = { page = 1 }); ArrowPreference("账号与分享", summary = "管理公开信息、群授权和设备", onClick = { page = 3 }); ArrowPreference("歌词", summary = "从音乐文件夹自动匹配", onClick = { page = 2 }) }
+                        TabRow(minWidth = 0.dp, tabs = listOf("实时", "使用统计"), selectedTabIndex = overview, onTabSelected = { overview = it })
+                        if (overview == 1) UsagePage { page = 1 }
+                        else {
+                            Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                                Text(if (prefs.getBoolean("enabled", false)) "正在同步到本账号" else "同步已暂停", style = MiuixTheme.textStyles.title3)
+                                Text(value("status", "连接账号并选择采集内容后即可开始"))
+                                Button(onClick = {
+                                    val enabled = prefs.getBoolean("enabled", false)
+                                    if (!enabled && (!value("url").startsWith("https://") || value("token").length < 24 || value("account").isBlank() || prefs.getBoolean("connection_invalid", false))) { page = 3; toast("请先在设置中连接账号") }
+                                    else {
+                                        prefs.edit().putBoolean("enabled", !enabled).apply()
+                                        if (!enabled && android.os.Build.VERSION.SDK_INT >= 33 && !notificationGranted() && !prefs.getBoolean("notification_requested", false)) requestNotifications()
+                                        startForegroundService(Intent(this@MainActivity, Collector::class.java).apply { if (enabled) action = "stop" })
+                                    }
+                                }, colors = ButtonDefaults.buttonColorsPrimary(), modifier = Modifier.fillMaxWidth()) { Text(if (prefs.getBoolean("enabled", false)) "暂停同步" else "开始同步") }
+                                Note("暂停会撤下本机实时状态，并尝试撤下已同步的统计。访客和群权限在“分享”页设置。")
+                            } }
+                            SyncPreview()
+                        }
                     }
                     1 -> {
-                        Card(modifier = Modifier.fillMaxWidth()) { ArrowPreference("应用", summary = filterSummary("apps"), onClick = { dialog = "apps" }); ArrowPreference("播放器", summary = filterSummary("players"), onClick = { dialog = "players" }); ArrowPreference("所需权限", summary = permissionSummary(), onClick = { dialog = "permissions" }) }
-                        Card(modifier = Modifier.fillMaxWidth()) { Toggle("电量与设备状态", "device_state"); Toggle("网络状态", "network"); Toggle("声音设置", "audio"); ArrowPreference("更多信息", summary = "应用时长、存储与采集诊断", onClick = { dialog = "more" }) }
-                        Note("修改自动保存，下一次同步生效。公开展示范围仍由服务端控制。")
-                    }
-                    2 -> {
-                        Card(modifier = Modifier.fillMaxWidth()) { Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) { Text(if (MusicLibrary.hasReadPermission(this@MainActivity)) "✓ 音乐文件夹已授权" else "音乐文件夹尚未授权"); Text(value("libraryStatus", "尚未选择音乐文件夹")); Text(lyricLabel()) } }
-                        Button(onClick = { folder.launch(null) }, colors = ButtonDefaults.buttonColorsPrimary(), modifier = Modifier.fillMaxWidth()) { Text(if (!MusicLibrary.hasReadPermission(this@MainActivity)) "选择音乐文件夹并授权" else "更换音乐文件夹") }
-                        if (value("tree").isNotEmpty()) Card(modifier = Modifier.fillMaxWidth()) {
-                            ArrowPreference("刷新音乐库", summary = "添加歌曲后重新扫描", onClick = { MusicLibrary.scan(this@MainActivity, Uri.parse(value("tree"))) })
-                            ArrowPreference("移除音乐文件夹", summary = "停止读取并清除本地索引", onClick = { dialog = "remove" })
+                        Text("应用", style = MiuixTheme.textStyles.title3)
+                        Card(Modifier.fillMaxWidth()) { ArrowPreference("前台应用", summary = filterSummary("apps"), onClick = { dialog = "apps" }); Toggle("应用名称与时长", "app_details") }
+                        PermissionRow("使用情况访问", usageGranted(), value("apps_mode", "whitelist") != "off" || prefs.getBoolean("usage_history", false), "进入后选择 State of Me，开启使用情况访问权限。") { openPermission(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS, Uri.parse("package:$packageName"))) }
+                        Text("音乐与歌词", style = MiuixTheme.textStyles.title3)
+                        Card(Modifier.fillMaxWidth()) { ArrowPreference("播放器", summary = filterSummary("players"), onClick = { dialog = "players" }) }
+                        PermissionRow("音乐通知访问", musicGranted(), value("players_mode", "whitelist") != "off", "进入后选择 State of Me 并允许通知访问。") { openPermission(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }
+                        Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Text(if (MusicLibrary.hasReadPermission(this@MainActivity)) "✓ 歌词目录已授权" else "歌词目录尚未授权")
+                            Note(value("libraryStatus", "选择音乐所在文件夹，自动读取内嵌歌词；音乐文件不会上传。"))
+                            if (value("tree").isNotEmpty()) Note(lyricLabel())
+                            Button(onClick = { folder.launch(null) }) { Text(if (!MusicLibrary.hasReadPermission(this@MainActivity)) "选择歌词目录并授权" else "更换歌词目录") }
                         }
-                        Note("选择一次音乐所在文件夹，播放时自动读取歌曲标签中的歌词。音乐文件不会上传。")
+                            if (value("tree").isNotEmpty()) {
+                                ArrowPreference("刷新音乐库", summary = "添加歌曲后重新扫描", onClick = { MusicLibrary.scan(this@MainActivity, Uri.parse(value("tree"))) })
+                                ArrowPreference("移除歌词目录", summary = "停止读取并清除本机索引", onClick = { dialog = "remove" })
+                            }
+                        }
+                        Text("设备信息", style = MiuixTheme.textStyles.title3)
+                        Card(Modifier.fillMaxWidth()) { Toggle("电量与设备状态", "device_state"); Toggle("网络状态", "network"); Toggle("声音设置", "audio"); Toggle("内存、存储与热状态", "resources"); Toggle("采集权限诊断", "collector_health") }
+                        Text("使用统计", style = MiuixTheme.textStyles.title3)
+                        Card(Modifier.fillMaxWidth()) { SwitchPreference(title = "同步使用统计", summary = "同步到本账号；公开和群可见范围单独设置。", checked = prefs.getBoolean("usage_history", false), onCheckedChange = { prefs.edit().putBoolean("usage_history", it).apply(); UsageJob.schedule(this@MainActivity) })
+                            ArrowPreference("清除本机统计", summary = "从现在重新记录；不影响系统数字健康", onClick = { dialog = "clearStats" })
+                        }
+                        Note(value("usage_sync_status", "默认仅保存在本机。开启统计同步并开始同步后，每 15 分钟择机更新。"))
+                        PermissionRow("运行通知", notificationGranted(), true, "显示同步运行状态，方便随时暂停。") { requestNotifications() }
+                        Note("采集选择自动保存。返回本页会刷新权限状态。")
                     }
-                    3 -> ConnectionPage()
-                    4 -> UsagePage()
                 }
+                // Always composed: account requests and unsaved audience drafts survive navigation.
+                ConnectionPage(page = page, openSettings = { page = 3 })
+            }
+        }
+        WindowDialog(show = dialog == "clearStats", title = "清除本机使用统计？", summary = "清除本机汇总并从现在重新记录；下一次成功同步会替换服务端记录。", onDismissRequest = { dialog = "" }) {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Button(onClick = { UsageHistory.clear(this@MainActivity); UsageJob.schedule(this@MainActivity); dialog = ""; toast("本机统计已清除") }) { Text("确认清除") }
+                Button(onClick = { dialog = "" }) { Text("取消") }
             }
         }
         if (dialog == "apps" || dialog == "players") AppPicker(dialog) { dialog = "" }
-        WindowDialog(show = dialog == "permissions", title = "所需权限", onDismissRequest = { dialog = "" }) {
-            Column(Modifier.heightIn(max = (androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp - 180).coerceAtLeast(240).dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                PermissionRow("音乐通知访问", musicGranted(), value("players_mode", "whitelist") != "off", "读取播放器的歌曲与进度。进入后选择 State of Me 并允许通知访问。") { openPermission(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }
-                PermissionRow("应用使用情况", usageGranted(), value("apps_mode", "whitelist") != "off" || prefs.getBoolean("usage_history", false), "识别前台应用并计算使用统计。进入后选择 State of Me，开启使用情况访问权限。") { openPermission(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS, Uri.parse("package:$packageName"))) }
-                PermissionRow("运行通知", notificationGranted(), true, "显示分享运行状态，方便随时暂停。") { requestNotifications() }
-                Note("返回本页会自动检查授权结果。系统页面因手机品牌而异；已授权项目无需重复操作。")
-                Button(onClick = { dialog = "" }) { Text("完成") }
-            }
-        }
-        WindowDialog(show = dialog == "more", title = "更多信息", onDismissRequest = { dialog = "" }) {
-            Column { Toggle("应用名称与时长", "app_details"); Toggle("内存、存储与热状态", "resources"); Toggle("采集权限诊断", "collector_health"); Button(onClick = { dialog = "" }) { Text("完成") } }
-        }
-        WindowDialog(show = dialog == "remove", title = "移除音乐文件夹？", summary = "音乐播放状态仍可分享，内嵌歌词将停止读取。", onDismissRequest = { dialog = "" }) {
+        WindowDialog(show = dialog == "remove", title = "移除音乐文件夹？", summary = "音乐播放状态仍可同步，内嵌歌词将停止读取。", onDismissRequest = { dialog = "" }) {
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Button(onClick = { dialog = "" }, modifier = Modifier.weight(1f)) { Text("取消") }
                 Button(onClick = { MusicLibrary.clear(this@MainActivity); dialog = "" }, modifier = Modifier.weight(1f)) { Text("移除") }
             }
         }
     }
-    @Composable private fun UsagePage() {
+    @Composable private fun SyncPreview() {
+        val refreshed = revision
+        var tick by remember { mutableLongStateOf(android.os.SystemClock.elapsedRealtime()) }
+        LaunchedEffect(Unit) { while (true) { kotlinx.coroutines.delay(5000); tick = android.os.SystemClock.elapsedRealtime() } }
+        val raw = Collector.getUiPreview()
+        val snapshot = remember(raw) { try { org.json.JSONObject(raw.json) } catch (_: Exception) { null } }
+        val fresh = prefs.getBoolean("enabled", false) && !prefs.getBoolean("connection_invalid", false) && snapshot != null && tick - raw.at in 0..45000
+        Text("最近同步的内容", style = MiuixTheme.textStyles.title3)
+        if (!fresh) Note("暂无新鲜的本机同步预览。开始同步后，成功上传的内容会显示在这里。")
+        else Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            val app = snapshot.optString("app")
+            val details = snapshot.optJSONObject("app_details")
+            if (app.isNotEmpty()) Text("应用  " + (details?.optString("label")?.takeIf { it.isNotBlank() } ?: app))
+            val music = snapshot.optJSONObject("music")
+            if (music?.optBoolean("playing") == true) { Text("正在播放  " + music.optString("title")); music.optString("artist").takeIf { it.isNotBlank() }?.let { Note(it) } }
+            val device = snapshot.optJSONObject("device_state")
+            if (device?.has("battery_percent") == true) Text("电量  ${device.optInt("battery_percent")}%" + if (device.optBoolean("charging")) " · 充电中" else "")
+            if (app.isEmpty() && music?.optBoolean("playing") != true && device == null) Note("本次没有应用、正在播放的媒体或电量信息。")
+        } }
+        Note("这是本机最近成功同步的预览，不等于公开结果；超过 45 秒不展示。")
+    }
+    @Composable private fun UsagePage(openCollection: () -> Unit) {
         val refresh = revision
         var range by rememberSaveable { mutableIntStateOf(0) }
         var reload by remember { mutableIntStateOf(0) }
         var busy by remember { mutableStateOf(false) }
         var data by remember { mutableStateOf<org.json.JSONObject?>(null) }
         var error by remember { mutableStateOf("") }
-        var confirmClear by remember { mutableStateOf(false) }
-        var clearRequested by remember { mutableStateOf(false) }
         val granted = usageGranted()
         LaunchedEffect(reload, granted) {
             if (!granted) { data = null; return@LaunchedEffect }
             prefs.edit().putBoolean("usage_local", true).apply(); UsageJob.schedule(this@MainActivity)
             busy = true; error = ""
             try { data = withContext(Dispatchers.IO) {
-                if (clearRequested) { UsageHistory.clear(this@MainActivity); clearRequested = false }
                 val result = UsageHistory.refresh(this@MainActivity, true)
                 UsageHistory.retry()
                 UsageHistory.sync(this@MainActivity, !prefs.getBoolean("enabled", false))
                 result
-            } } catch (_: Exception) { error = "暂时无法读取统计，请确认使用情况权限已授权、手机已解锁，再点刷新。" }
-            busy = false
+            } } catch (cancel: kotlinx.coroutines.CancellationException) { throw cancel }
+            catch (_: Exception) { error = "暂时无法读取统计，请确认使用情况权限已授权、手机已解锁，再点刷新。" }
+            finally { busy = false }
         }
         Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text("使用统计", style = MiuixTheme.textStyles.title2)
             Note("按手机时区汇总。屏幕亮着不代表一直在看；应用时长可能重叠。")
-            if (!granted) { Text("尚未授权使用情况访问"); Button(onClick = { openPermission(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS, Uri.parse("package:$packageName"))) }, colors = ButtonDefaults.buttonColorsPrimary()) { Text("去授权") } }
+            if (!granted) { Text("尚未授权使用情况访问"); Button(onClick = openCollection, colors = ButtonDefaults.buttonColorsPrimary()) { Text("前往采集设置权限") } }
             else { Note("✓ 使用情况已授权"); Button(enabled = !busy, onClick = { reload++ }) { Text(if (busy) "正在更新…" else "刷新统计") } }
             if (error.isNotEmpty()) Note(error)
         } }
-        Card(Modifier.fillMaxWidth()) { SwitchPreference(title = "同步使用统计", summary = "同步到自己的账号；群查询需单独授权。", checked = prefs.getBoolean("usage_history", false), onCheckedChange = { prefs.edit().putBoolean("usage_history", it).apply(); reload++ }) }
-        Note(value("usage_sync_status", "仅保存在本机。开启同步并开始分享后，每 15 分钟择机更新。"))
         val count = listOf(1, 7, 30)[range]
         TabRow(minWidth = 0.dp, tabs = listOf("今天", "近 7 天", "近 30 天"), selectedTabIndex = range, onTabSelected = { range = it })
         val root = data
@@ -194,16 +235,8 @@ class MainActivity : ComponentActivity() {
                     Text("应用使用排行", style = MiuixTheme.textStyles.title3)
                     if (totals.isEmpty()) Note("这段时间没有可读取的应用使用记录。")
                     for ((_, item) in totals.entries.sortedByDescending { it.value.second }.take(15)) Text("${item.first}  ${duration(item.second)}")
-                    Note("显示前 15 项。本机统计不受分享过滤影响；上传明细遵循分享页的应用名单。")
+                    Note("显示前 15 项。本机统计不受应用过滤影响；同步明细遵循采集页的应用名单。")
                 } }
-            }
-        }
-        Note("关闭同步会在联网后撤下服务端统计。本地统计保留，应用明细每天最多同步前 50 项。")
-        Button(enabled = !busy, onClick = { confirmClear = true }) { Text("清除统计记录") }
-        WindowDialog(show = confirmClear, title = "清除使用统计？", summary = "清除本机汇总并从现在重新统计；下一次成功同步会替换服务端记录，不影响系统数字健康。", onDismissRequest = { confirmClear = false }) {
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Button(onClick = { confirmClear = false }) { Text("取消") }
-                Button(onClick = { clearRequested = true; reload++; confirmClear = false }) { Text("清除") }
             }
         }
     }
@@ -214,7 +247,7 @@ class MainActivity : ComponentActivity() {
     }
     private fun filterSummary(key: String): String {
         val mode = value(key + "_mode", "whitelist")
-        return when (mode) { "off" -> "不分享"; "blacklist" -> "黑名单 · 排除 ${csv(key + "_blocked").size} 个"; else -> "白名单 · 仅分享 ${csv(key).size} 个" }
+        return when (mode) { "off" -> "不采集"; "blacklist" -> "黑名单 · 排除 ${csv(key + "_blocked").size} 个"; else -> if (csv(key).isEmpty()) "白名单为空，不同步应用" else "白名单 · 仅同步 ${csv(key).size} 个" }
     }
     private fun usageGranted() = getSystemService(android.app.AppOpsManager::class.java).checkOpNoThrow(android.app.AppOpsManager.OPSTR_GET_USAGE_STATS, android.os.Process.myUid(), packageName) == android.app.AppOpsManager.MODE_ALLOWED
     private fun musicGranted(): Boolean {
@@ -234,8 +267,8 @@ class MainActivity : ComponentActivity() {
         try { startActivity(intent) } catch (_: Exception) { startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName"))) }
     }
     @Composable private fun PermissionRow(title: String, granted: Boolean, needed: Boolean, guide: String, request: () -> Unit) {
-        if (granted) { Text("✓ $title · 已授权"); Note(if (needed) "无需再次授权" else "当前功能未开启，可在系统设置中管理权限") }
-        else if (!needed) { Text("$title · 当前不需要"); Note("开启对应分享功能后再授权") }
+        if (granted) { Text("✓ $title · 已授权"); if (!needed) Note("当前功能未开启，可在系统设置中管理权限") }
+        else if (!needed) { Text("$title · 当前不需要"); Note("开启对应采集功能后再授权") }
         else { Text("$title · 未授权"); Note(guide); Button(onClick = request) { Text("去授权") } }
     }
     private fun lyricLabel() = if (value("tree").isNotEmpty() && !MusicLibrary.hasReadPermission(this)) "文件夹授权已失效，请重新选择" else if (value("tree").isEmpty()) "选择文件夹后自动匹配歌词" else when (value("lyricStatus")) {
@@ -244,7 +277,9 @@ class MainActivity : ComponentActivity() {
     private data class AppEntry(val pkg: String, val label: String, val icon: ImageBitmap?)
     @Composable private fun AppPicker(key: String, dismiss: () -> Unit) {
         var mode by rememberSaveable(key) { mutableStateOf(value(key + "_mode", "whitelist")) }
-        var white by remember { mutableStateOf(csv(key)) }; var black by remember { mutableStateOf(csv(key + "_blocked")) }
+        val selectionSaver = Saver<Set<String>, ArrayList<String>>(save = { ArrayList(it) }, restore = { it.toSet() })
+        var white by rememberSaveable(key, stateSaver = selectionSaver) { mutableStateOf(csv(key)) }
+        var black by rememberSaveable(key, stateSaver = selectionSaver) { mutableStateOf(csv(key + "_blocked")) }
         var query by rememberSaveable { mutableStateOf("") }; var loaded by remember { mutableStateOf(false) }
         var apps by remember { mutableStateOf(emptyList<AppEntry>()) }
         LaunchedEffect(key) {
@@ -261,8 +296,10 @@ class MainActivity : ComponentActivity() {
             }; loaded = true
         }
         WindowDialog(show = true, title = if (key == "apps") "选择应用" else "选择播放器", onDismissRequest = dismiss) {
-            Column(Modifier.heightIn(max = 600.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                TabRow(minWidth = 0.dp, tabs = listOf("不分享", "白名单", "黑名单"), selectedTabIndex = listOf("off", "whitelist", "blacklist").indexOf(mode).coerceAtLeast(0), onTabSelected = { mode = listOf("off", "whitelist", "blacklist")[it] })
+            val density = LocalDensity.current
+            val height = with(density) { (androidx.compose.ui.platform.LocalWindowInfo.current.containerSize.height - WindowInsets.ime.getBottom(density)).toDp() }
+            Column(Modifier.heightIn(max = (height - 160.dp).coerceAtLeast(220.dp)), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                TabRow(minWidth = 0.dp, tabs = listOf("不采集", "白名单", "黑名单"), selectedTabIndex = listOf("off", "whitelist", "blacklist").indexOf(mode).coerceAtLeast(0), onTabSelected = { mode = listOf("off", "whitelist", "blacklist")[it] })
                 if (mode != "off") {
                     TextField(value = query, onValueChange = { query = it }, label = "搜索应用名称", singleLine = true)
                     val visible = apps.filter { it.label.contains(query, true) || it.pkg.contains(query, true) }
@@ -276,13 +313,13 @@ class MainActivity : ComponentActivity() {
                             })
                         }
                     }
-                    Note(if (mode == "blacklist") "分享此列表中未勾选的应用。新安装应用需重新保存。" else "仅分享勾选的应用。应用列表只保存在本机。")
+                    Note(if (mode == "blacklist") "同步此列表中未勾选的应用。新安装应用需重新保存。" else "仅同步勾选的应用。应用列表只保存在本机。")
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     Button(onClick = dismiss, modifier = Modifier.weight(1f)) { Text("取消") }
                     Button(enabled = loaded, onClick = {
                         prefs.edit().putString(key + "_mode", mode).putString(key, white.sorted().joinToString(",")).putString(key + "_blocked", black.sorted().joinToString(",")).putString(key + "_candidates", apps.map { it.pkg }.sorted().joinToString(",")).apply()
-                        dismiss(); toast("分享范围已保存")
+                        dismiss(); toast("采集范围已保存")
                     }, colors = ButtonDefaults.buttonColorsPrimary(), modifier = Modifier.weight(1f)) { Text("保存") }
                 }
             }

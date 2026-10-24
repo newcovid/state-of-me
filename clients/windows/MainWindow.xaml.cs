@@ -22,15 +22,13 @@ public class AppChoice
 }
 public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
 {
-    readonly Settings settings = Settings.Load(); readonly SyncEngine engine;
+    readonly Settings settings = Settings.Load(); readonly SyncEngine engine; readonly AccountWorkspace account;
     readonly ObservableCollection<AppChoice> apps = new(), players = new();
-    readonly System.Windows.Forms.NotifyIcon tray; bool exiting; string directory = ""; CancellationTokenSource? hideTimer;
+    readonly System.Windows.Forms.NotifyIcon tray; bool exiting, initialized; string directory = ""; CancellationTokenSource? hideTimer;
     public MainWindow()
     {
         InitializeComponent();
         SystemThemeWatcher.Watch(this);
-        Endpoint.Text = settings.Endpoint;
-        ConnectionView();
         FilterMode.SelectedIndex = settings.AppMode == "off" ? 0 : settings.AppMode == "blacklist" ? 2 : 1;
         SharePresence.IsChecked = settings.Presence;
         ShareDevice.IsChecked = settings.Device;
@@ -65,6 +63,10 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         PlayerList.ItemsSource = players;
         engine = new(settings, Dispatcher);
         engine.Updated += UpdateView;
+        var configuredToken = settings.Token; var configuredEndpoint = settings.Endpoint;
+        account = new AccountWorkspace(this, settings, async () => { if (configuredToken != settings.Token || configuredEndpoint != settings.Endpoint) { await engine.Configure(settings); configuredToken = settings.Token; configuredEndpoint = settings.Endpoint; } ConnectionView(); UpdateView(); }, () => ShowPage("Settings"));
+        account.StateChanged += () => { ConnectionView(); UpdateView(); };
+        AccountHost.Content = account.SettingsContent; SharingPage.Content = account.SharingContent; ConnectionView(); ShowPage("Overview");
         IsVisibleChanged += (_, _) => { if (IsVisible) UpdateView(); };
         tray = new()
         {
@@ -74,13 +76,13 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         };
         var menu = new System.Windows.Forms.ContextMenuStrip();
         menu.Items.Add("打开", null, (_, _) => Dispatcher.Invoke(Open));
-        menu.Items.Add("暂停分享", null, async (_, _) => await engine.Pause());
-        menu.Items.Add("恢复分享", null, (_, _) => Dispatcher.Invoke(() => { settings.Enabled = true; settings.Save(); engine.Request(); }));
+        menu.Items.Add("暂停同步", null, async (_, _) => await engine.Pause());
+        menu.Items.Add("开始同步", null, (_, _) => Dispatcher.Invoke(() => StartSync(this, new RoutedEventArgs())));
         menu.Items.Add("退出", null, async (_, _) => await Exit());
         tray.ContextMenuStrip = menu;
         tray.DoubleClick += (_, _) => Dispatcher.Invoke(Open);
-        Closing += (_, e) => { if (!exiting) { e.Cancel = true; Hide(); } };
-        Loaded += async (_, _) => { engine.Sources.AttachWindow(new System.Windows.Interop.WindowInteropHelper(this).Handle); await engine.Initialize(); RefreshApps(this, new RoutedEventArgs()); RefreshPlayers(this, new RoutedEventArgs()); };
+        Closing += (_, e) => { if (!exiting) { e.Cancel = true; if (account.CanClose()) Hide(); else ShowPage("Settings"); } };
+        Loaded += async (_, _) => { if (initialized) return; initialized = true; RefreshEnabledStartup(); engine.Sources.AttachWindow(new System.Windows.Interop.WindowInteropHelper(this).Handle); await engine.Initialize(); await account.InitializeAsync(); RefreshApps(this, new RoutedEventArgs()); RefreshPlayers(this, new RoutedEventArgs()); };
     }
     void Open()
     {
@@ -90,6 +92,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
     }
     async Task Exit()
     {
+        if (!account.CanClose()) { ShowPage("Settings"); return; }
         exiting = true;
         hideTimer?.Cancel();
         await engine.Pause();
@@ -97,17 +100,25 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         tray.Dispose();
         System.Windows.Application.Current.Shutdown();
     }
+    void Navigate(object sender, RoutedEventArgs e)
+    {
+        if (sender is Wpf.Ui.Controls.NavigationViewItem item) ShowPage(item.Tag?.ToString() ?? "Overview");
+    }
+    void ShowPage(string page)
+    {
+        OverviewPage.Visibility = page == "Overview" ? Visibility.Visible : Visibility.Collapsed;
+        CollectionPage.Visibility = page == "Collection" ? Visibility.Visible : Visibility.Collapsed;
+        SharingPage.Visibility = page == "Sharing" ? Visibility.Visible : Visibility.Collapsed;
+        SettingsPage.Visibility = page == "Settings" ? Visibility.Visible : Visibility.Collapsed;
+        OverviewNav.IsActive = page == "Overview"; CollectionNav.IsActive = page == "Collection";
+        SharingNav.IsActive = page == "Sharing"; SettingsNav.IsActive = page == "Settings";
+        PageTitle.Text = page switch { "Collection" => "采集", "Sharing" => "分享", "Settings" => "设置", _ => "概览" };
+    }
     void ConnectionView()
     {
         bool connected = settings.Token.Length >= 24 && !string.IsNullOrWhiteSpace(settings.Account);
-        AccountLabel.Text = settings.ConnectionInvalid ? "设备连接已失效，请断开后重新登录添加本机" : connected ? "✓ 本机连接到 " + settings.Account + (settings.AccountSession.Length >= 24 ? " · 账号管理已登录" : " · 登录后可直接管理分享范围") : "在客户端注册或登录，自动添加本机，无需填写密钥。";
-        ConnectButton.IsEnabled = true; DisconnectButton.IsEnabled = connected; Endpoint.IsReadOnly = connected;
-    }
-    void ManageAccount(object sender, RoutedEventArgs e)
-    {
-        if (settings.Token.Length < 24) { try { settings.Endpoint = AccountApi.NormalizeEndpoint(Endpoint.Text); } catch (InvalidOperationException ex) { PairStatus.Text = ex.Message; return; } }
-        var window = new AccountWindow(settings, async () => { await engine.Configure(settings); ConnectionView(); UpdateView(); }) { Owner = this };
-        window.ShowDialog(); Endpoint.Text = settings.Endpoint; ConnectionView(); UpdateView();
+        AccountLabel.Text = settings.ConnectionInvalid ? "设备连接已失效，请断开后重新登录添加本机" : connected ? "设备同步连接：" + settings.Account + "。" + (settings.AccountSession.Length >= 24 ? "管理会话已登录。" : "管理会话未登录；在上方登录即可管理分享，无需断开同步连接。") : "尚未连接设备，请在上方登录或注册。";
+        DisconnectButton.IsEnabled = connected;
     }
     static async Task<JsonElement> AccountRequest(string endpoint, string path, object body, CancellationToken cancellation, string token = "")
     {
@@ -118,80 +129,95 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         response.EnsureSuccessStatusCode();
         return JsonDocument.Parse(await response.Content.ReadAsStringAsync(cancellation)).RootElement.Clone();
     }
-    void ConnectAccount(object sender, RoutedEventArgs e) => ManageAccount(sender, e);
     async void DisconnectAccount(object sender, RoutedEventArgs e)
     {
-        if (System.Windows.MessageBox.Show(this, "停止分享并断开设备，清空本机分享选择、手动状态和歌词目录。音乐文件会保留。是否继续？", "断开此设备", MessageBoxButton.YesNo) != MessageBoxResult.Yes) return;
+        if (System.Windows.MessageBox.Show(this, "停止同步并断开设备，清空本机采集选择、手动状态和歌词目录。音乐文件会保留。是否继续？", "断开此设备", MessageBoxButton.YesNo) != MessageBoxResult.Yes) return;
+        if (!account.CanDisconnect) { ConnectionNotice.Text = account.IsBusy ? "请等待账号请求完成后再断开。" : "请先保存上方新的恢复码，再断开本机。"; return; }
         hideTimer?.Cancel(); DisconnectButton.IsEnabled = false;
         await engine.Pause();
-        try { await AccountRequest(settings.Endpoint, "/v1/device/disconnect", new { }, CancellationToken.None, settings.Token); PairStatus.Text = "已断开设备。"; }
-        catch { PairStatus.Text = "本机已断开，服务器暂不可达。旧状态到期后会消失，请在账号页移除此设备。"; }
+        try { await AccountRequest(settings.Endpoint, "/v1/device/disconnect", new { }, CancellationToken.None, settings.Token); ConnectionNotice.Text = "已断开设备。"; }
+        catch { ConnectionNotice.Text = "本机已断开，服务器暂不可达。旧状态到期后会消失，请在账号页移除此设备。"; }
         var clean = new Settings { Endpoint = settings.Endpoint, AutoStart = settings.AutoStart };
         foreach (var property in typeof(Settings).GetProperties().Where(x => x.CanWrite)) property.SetValue(settings, property.GetValue(clean));
         settings.Save(); apps.Clear(); players.Clear(); Manual.Text = ""; directory = ""; DirectoryLabel.Text = ""; FilterMode.SelectedIndex = 1; PreferredPlayer.ItemsSource = null;
         foreach (var check in new[] { SharePresence, ShareDevice, ShareNetwork, ShareAudio, ShareResources, ShareDisplay, ShareWhatPulse, ShareMusic }) check.IsChecked = false;
-        await engine.Configure(settings); ConnectionView();
+        await engine.Configure(settings); account.ResetConnection(); ConnectionView();
     }
     void UpdateView()
     {
         if (!IsVisible)
             return;
-        StatusText.Text = string.IsNullOrWhiteSpace(settings.Account) || settings.Token.Length < 24 ? "尚未连接账号，请在账号与设备页登录" : engine.Status;
+        StatusText.Text = string.IsNullOrWhiteSpace(settings.Account) || settings.Token.Length < 24 ? "尚未连接账号，请在设置页登录" : engine.Status;
         if (settings.ConnectionInvalid) ConnectionView();
-        Summary.Text = settings.Enabled ? (engine.Preview["app_details"]?["label"]?.ToString() ?? engine.Preview["music"]?["title"]?.ToString() ?? engine.Sources.AppStatus) : "分享已暂停";
+        Summary.Text = settings.Enabled ? (engine.Preview["app_details"]?["label"]?.ToString() ?? engine.Preview["music"]?["title"]?.ToString() ?? engine.Sources.AppStatus) : "同步已暂停";
+        if (settings.Token.Length < 24 || string.IsNullOrWhiteSpace(settings.Account)) Summary.Text = "连接账号，开始同步这台电脑的状态。";
         Counters.Text = $"采集 {engine.Collections} 次    上传 {engine.Uploads} 次    去重 {engine.Skipped} 次";
         Preview.Text = engine.Preview.ToJsonString(new JsonSerializerOptions { WriteIndented = true, Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping });
         Health.Text = $"前台应用：{engine.Sources.AppStatus}；媒体接口：{engine.Sources.MediaCapability}；请求正文累计 {engine.Bytes} 字节。受众权限以服务端为准。";
+        bool connected = settings.Token.Length >= 24 && !string.IsNullOrWhiteSpace(settings.Account) && !settings.ConnectionInvalid;
+        StartButton.Content = !connected ? "连接账号" : settings.Enabled ? "正在同步" : "开始同步";
+        StartButton.IsEnabled = !connected || !settings.Enabled; PauseSyncButton.IsEnabled = connected && settings.Enabled; TimedPauseButton.IsEnabled = connected && settings.Enabled;
+        var media = engine.Preview["music"];
+        MediaSummary.Text = media?["playing"]?.GetValue<bool>() == true ? "正在播放：" + (media["title"]?.ToString() ?? "媒体") + (media["artist"] == null ? "" : " · " + media["artist"]) : "";
+        MediaSummary.Visibility = MediaSummary.Text.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
+        var stats = engine.Preview["usage_summary"];
+        Statistics.Text = stats == null ? "当前没有 WhatPulse 统计。可在采集页启用并配置本地 API。" : "WhatPulse 累计：按键 " + (stats["keys"]?.ToString() ?? "未提供") + "，点击 " + (stats["clicks"]?.ToString() ?? "未提供") + "。统计范围：" + (stats["scope"]?.ToString() ?? "未提供") + "；累计量不等于今日用量。";
         PulseStatus.Text = engine.WhatPulseStatus;
-        LyricsStatus.Text = engine.LyricStatus;
+        LyricsStatus.Text = directory != settings.MusicDirectory ? "所选目录尚未保存；保存采集设置后自动索引。" : engine.LyricStatus;
     }
-    async void Save(object sender, RoutedEventArgs e)
+    async void SaveCollection(object sender, RoutedEventArgs e)
     {
-        if (!Uri.TryCreate(Endpoint.Text.Trim(), UriKind.Absolute, out var u) || u.Scheme != "https" || !string.IsNullOrEmpty(u.UserInfo) || settings.Token.Length < 24 || string.IsNullOrWhiteSpace(settings.Account))
-        {
-            StatusText.Text = "请先在账号与设备页登录";
-            return;
-        }
-        if (settings.Token.Length >= 24 && settings.Endpoint != Endpoint.Text.Trim().TrimEnd('/'))
-        { StatusText.Text = "请先断开旧设备，再更换账号或服务地址"; return; }
-        hideTimer?.Cancel();
-        settings.Endpoint = Endpoint.Text.Trim().TrimEnd('/');
-        settings.AppMode = FilterMode.SelectedIndex switch
+        var draft = new CollectionOptions();
+        draft.AppMode = FilterMode.SelectedIndex switch
         {
             0 => "off",
             2 => "blacklist",
             _ => "whitelist"
         };
-        settings.Apps = apps.Where(x => x.Selected).Select(x => x.Id).ToList();
-        settings.AppAliases = apps.Where(x => !string.IsNullOrWhiteSpace(x.Alias)).ToDictionary(x => x.Id, x => x.Alias.Trim());
-        settings.Players = players.Where(x => x.Selected).Select(x => x.Id).ToList();
-        settings.PreferredPlayer = PreferredPlayer.SelectedItem as string ?? "";
-        settings.Presence = SharePresence.IsChecked == true;
-        settings.Device = ShareDevice.IsChecked == true;
-        settings.Network = ShareNetwork.IsChecked == true;
-        settings.Audio = ShareAudio.IsChecked == true;
-        settings.Resources = ShareResources.IsChecked == true;
-        settings.Display = ShareDisplay.IsChecked == true;
-        settings.WhatPulse = ShareWhatPulse.IsChecked == true;
-        settings.Music = ShareMusic.IsChecked == true;
-        settings.MusicDirectory = directory;
-        settings.IdleMinutes = (int)(IdleMinutes.Value ?? 3);
-        settings.WhatPulsePort = (int)(PulsePort.Value ?? 3490);
-        settings.ManualText = Manual.Text.Trim();
-        settings.ManualUntil = DateTimeOffset.UtcNow.AddHours(1).ToUnixTimeSeconds();
-        settings.Enabled = true;
-        settings.AutoStart = AutoStart.IsChecked == true;
-        try
-        {
+        draft.Apps = apps.Where(x => x.Selected).Select(x => x.Id).ToList();
+        draft.AppAliases = apps.Where(x => !string.IsNullOrWhiteSpace(x.Alias)).ToDictionary(x => x.Id, x => x.Alias.Trim());
+        draft.Players = players.Where(x => x.Selected).Select(x => x.Id).ToList();
+        draft.PreferredPlayer = PreferredPlayer.SelectedItem as string ?? "";
+        draft.Presence = SharePresence.IsChecked == true;
+        draft.Device = ShareDevice.IsChecked == true;
+        draft.Network = ShareNetwork.IsChecked == true;
+        draft.Audio = ShareAudio.IsChecked == true;
+        draft.Resources = ShareResources.IsChecked == true;
+        draft.Display = ShareDisplay.IsChecked == true;
+        draft.WhatPulse = ShareWhatPulse.IsChecked == true;
+        draft.Music = ShareMusic.IsChecked == true;
+        draft.MusicDirectory = directory;
+        draft.IdleMinutes = (int)(IdleMinutes.Value ?? 3);
+        draft.WhatPulsePort = (int)(PulsePort.Value ?? 3490);
+        try { draft.ApplyTo(settings); settings.Save(); await engine.Configure(settings); CollectionNotice.Text = settings.Enabled ? "采集设置已保存，正在同步。" : "采集设置已保存；到概览点击开始同步后上传。"; }
+        catch { CollectionNotice.Text = "保存失败，请检查配置目录权限。"; }
+    }
+    void StartSync(object sender, RoutedEventArgs e)
+    {
+        if (settings.Token.Length < 24 || string.IsNullOrWhiteSpace(settings.Account) || settings.ConnectionInvalid) { StatusText.Text = "请先在设置页登录并连接本机。"; ShowPage("Settings"); return; }
+        try { hideTimer?.Cancel(); settings.Enabled = true; settings.Save(); engine.Request(); UpdateView(); }
+        catch { settings.Enabled = false; StatusText.Text = "无法保存同步状态，请检查配置目录权限。"; }
+    }
+    void SaveManual(object sender, RoutedEventArgs e)
+    {
+        settings.ManualText = Manual.Text.Trim(); settings.ManualUntil = settings.ManualText.Length > 0 ? DateTimeOffset.UtcNow.AddHours(1).ToUnixTimeSeconds() : 0;
+        try { settings.Save(); if (settings.Enabled) engine.Request(); StatusText.Text = settings.Enabled ? "临时状态已保存，将随当前状态同步。" : "临时状态已保存，同步仍处于暂停状态。"; }
+        catch { StatusText.Text = "临时状态保存失败，请检查配置目录权限。"; }
+    }
+    void RefreshEnabledStartup()
+    {
+        if (!settings.AutoStart) return;
+        try { using var key = Registry.CurrentUser.CreateSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run"); key.SetValue("StateOfMe", "\"" + Environment.ProcessPath + "\""); }
+        catch { StartupNotice.Text = "已启用开机启动，但更新程序路径失败。可重新保存启动设置。"; }
+    }
+    void SaveStartup(object sender, RoutedEventArgs e)
+    {
+        try {
             using var key = Registry.CurrentUser.CreateSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run");
-            if (settings.AutoStart)
-                key.SetValue("StateOfMe", "\"" + Environment.ProcessPath + "\"");
-            else
-                key.DeleteValue("StateOfMe", false);
-            settings.Save();
-            await engine.Configure(settings);
-        }
-        catch { StatusText.Text = "保存失败，请检查配置目录权限"; }
+            bool enabled = AutoStart.IsChecked == true;
+            if (enabled) key.SetValue("StateOfMe", "\"" + Environment.ProcessPath + "\""); else key.DeleteValue("StateOfMe", false);
+            settings.AutoStart = enabled; settings.Save(); StartupNotice.Text = "启动设置已保存。";
+        } catch { StartupNotice.Text = "启动设置保存失败，请检查当前用户的权限。"; }
     }
     async void Pause(object sender, RoutedEventArgs e)
     {
@@ -204,13 +230,11 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         hideTimer = new();
         var cancel = hideTimer.Token;
         await engine.Pause();
-        StatusText.Text = "已隐身，将在 15 分钟后恢复";
+        StatusText.Text = "已暂停同步，将在 15 分钟后恢复";
         try
         {
             await Task.Delay(TimeSpan.FromMinutes(15), cancel);
-            settings.Enabled = true;
-            settings.Save();
-            engine.Request();
+            StartSync(this, new RoutedEventArgs());
         }
         catch (OperationCanceledException) { }
     }
@@ -276,6 +300,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
     }
     async void RefreshLyrics(object sender, RoutedEventArgs e)
     {
+        if (directory != settings.MusicDirectory) { LyricsStatus.Text = "目录选择尚未保存，请先保存采集设置；保存会自动索引新目录。"; return; }
         await engine.RefreshLyrics();
         UpdateView();
     }
@@ -283,11 +308,5 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
     {
         directory = "";
         DirectoryLabel.Text = "未选择音乐目录";
-    }
-    void AudiencePreview(object sender, RoutedEventArgs e)
-    {
-        if (string.IsNullOrWhiteSpace(settings.Account) || settings.Token.Length < 24)
-        { StatusText.Text = "请先连接账号，再查看受众预览"; return; }
-        ManageAccount(sender, e);
     }
 }

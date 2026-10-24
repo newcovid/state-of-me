@@ -11,6 +11,8 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.Saver
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
@@ -29,7 +31,7 @@ private data class ScopeOption(val key: String, val label: String, val group: St
 @Composable private fun AccountNote(value: String) { Text(value, style = MiuixTheme.textStyles.footnote1, color = MiuixTheme.colorScheme.onSurfaceVariantSummary) }
 
 /** Native account management; the browser remains an optional public preview. */
-@Composable fun MainActivity.ConnectionPage() {
+@Composable fun MainActivity.ConnectionPage(page: Int, openSettings: () -> Unit) {
     val prefs = remember { getSharedPreferences("som", 0) }
     val stored = remember { NativeAccountStore.load(this) }
     val pendingRecovery = remember { NativeAccountStore.recovery(this) }
@@ -44,20 +46,21 @@ private data class ScopeOption(val key: String, val label: String, val group: St
     var recovery by remember { mutableStateOf(pendingRecovery?.takeIf { it.server == server }) }
     var busy by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf("") }
-    var section by remember { mutableIntStateOf(0) }
     var deviceVersion by remember { mutableIntStateOf(0) }
     val refreshDevice = deviceVersion
     val connected = prefs.getString("token", "").orEmpty().length >= 24 && !prefs.getString("account", "").isNullOrBlank()
-    var group by remember { mutableStateOf("") }
-    var bindCommand by remember { mutableStateOf("") }
-    var bindExpires by remember { mutableLongStateOf(0) }
+    var group by rememberSaveable { mutableStateOf("") }
+    var bindCommand by rememberSaveable { mutableStateOf("") }
+    var bindExpires by rememberSaveable { mutableLongStateOf(0) }
     var confirmAction by remember { mutableStateOf("") }
     var confirmId by remember { mutableStateOf("") }
-    var editing by remember { mutableStateOf("") }
-    var selected by remember { mutableStateOf(emptySet<String>()) }
-    var editingRevision by remember { mutableIntStateOf(0) }
+    var editing by rememberSaveable { mutableStateOf("") }
+    var scopeVisible by rememberSaveable { mutableStateOf(false) }
+    var draftAccount by rememberSaveable { mutableStateOf("") }
+    var selected by rememberSaveable(stateSaver = Saver<Set<String>, ArrayList<String>>(save = { ArrayList(it) }, restore = { it.toSet() })) { mutableStateOf(emptySet<String>()) }
+    var editingRevision by rememberSaveable { mutableIntStateOf(0) }
     var expanded by remember { mutableStateOf(emptySet<String>()) }
-    var conflict by remember { mutableStateOf(false) }
+    var conflict by rememberSaveable { mutableStateOf(false) }
     var enrollmentConflict by remember { mutableStateOf(false) }
     val coroutine = rememberCoroutineScope()
     val catalog = info?.optJSONArray("scopes").objects().map { ScopeOption(it.getString("key"), it.optString("label", it.getString("key")), it.optString("group", "其他"), it.optString("description")) }
@@ -110,6 +113,7 @@ private data class ScopeOption(val key: String, val label: String, val group: St
     }
     // Disconnect explicitly removes local collection data and credentials.
     fun clearLocalDevice() {
+        editing = ""; scopeVisible = false; selected = emptySet(); bindCommand = ""
         val previousServer = prefs.getString("url", "").orEmpty()
         val previousAccount = prefs.getString("account", "").orEmpty()
         if (previousServer.isNotEmpty() && previousAccount.isNotEmpty()) NativeAccountStore.clearEnrollment(this, previousServer, previousAccount)
@@ -119,10 +123,16 @@ private data class ScopeOption(val key: String, val label: String, val group: St
         MusicLibrary.clear(this); prefs.edit().clear().commit(); deviceVersion++
     }
     fun copy(label: String, value: String) { getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText(label, value)); notify("已复制$label") }
-    fun beginScope(target: String) {
+    fun beginScope(target: String, replaceDraft: Boolean = false) {
+        if (editing.isNotEmpty() && !replaceDraft) { if (target != editing) notify("请先保存或放弃当前范围草稿"); scopeVisible = true; return }
+        scopeVisible = true; draftAccount = session?.let { it.server + "|" + it.name }.orEmpty()
         editing = target; editingRevision = me?.optInt("scope_revision") ?: 0
         selected = if (target == "public") me?.optJSONArray("public_fields").strings() else me?.optJSONObject("group_scopes")?.optJSONArray(target).strings()
         expanded = emptySet(); conflict = false
+    }
+    LaunchedEffect(session?.server, session?.name) {
+        val identity = session?.let { it.server + "|" + it.name }.orEmpty()
+        if (editing.isNotEmpty() && draftAccount != identity) { editing = ""; selected = emptySet(); scopeVisible = false; bindCommand = "" }
     }
     LaunchedEffect(Unit) {
         if (server.isBlank()) return@LaunchedEffect
@@ -138,15 +148,27 @@ private data class ScopeOption(val key: String, val label: String, val group: St
         finally { busy = false }
     }
 
-    Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text(if (session == null) "账号与分享" else "${session!!.name} 的账号", style = MiuixTheme.textStyles.title2)
+    // Keep this composable at a stable call site even when another destination is visible.
+    if (page !in 2..3) return
+    if (page == 2 && session == null) {
+        Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text("登录后设置分享范围", style = MiuixTheme.textStyles.title3)
+            AccountNote("公开访客与 QQ 群分别授权。设置会应用于同一账号的所有设备。")
+            Button(onClick = openSettings, colors = ButtonDefaults.buttonColorsPrimary()) { Text("前往设置登录") }
+        } }
+        return
+    }
+    if (page == 3) {
+        Text(session?.name ?: "服务与账号", style = MiuixTheme.textStyles.title3)
         if (server.isNotBlank()) AccountNote(server)
-        AccountNote(if (connected && prefs.getBoolean("connection_invalid", false)) "本机旧连接已失效，请先断开后重新连接。账号分享设置仍可独立管理。" else if (connected) "本机已连接 ${prefs.getString("account", "")}。账号权限影响所有设备，本机采集内容在“采集”页设置。" else "登录后连接本机，再选择要上传的内容。群查询和公开分享可分别设置。")
-        if (message.isNotBlank()) Text(message, style = MiuixTheme.textStyles.footnote1)
-    } }
+        AccountNote(if (connected && prefs.getBoolean("connection_invalid", false)) "本机连接已失效，请先断开后重新连接。" else if (connected) "本机已连接 ${prefs.getString("account", "")}，采集内容在“采集”页设置。" else "登录后连接本机，再选择要同步的内容。")
+    } else {
+        AccountNote("${session!!.name} · 以下权限影响此账号所有设备")
+    }
+    if (message.isNotBlank()) AccountNote(message)
     if (session == null) {
         Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            if (!connected) TextField(value = server, onValueChange = { server = it; info = null; password = "" }, label = "HTTPS 服务地址", singleLine = true, enabled = !busy)
+            if (!connected) TextField(value = server, onValueChange = { server = it; info = null; password = ""; editing = ""; scopeVisible = false; bindCommand = "" }, label = "HTTPS 服务地址", singleLine = true, enabled = !busy)
             Button(enabled = !busy, onClick = { runAction { loadInfo(); notify("服务已确认，可在这里登录或注册") } }) { Text(if (busy) "正在连接…" else "检查服务") }
             if (info != null) {
                 TextField(value = username, onValueChange = { username = it }, label = "账号名", singleLine = true, enabled = !busy && !connected)
@@ -184,34 +206,16 @@ private data class ScopeOption(val key: String, val label: String, val group: St
         if (connected) Button(enabled = !busy, onClick = { confirmAction = "disconnect" }) { Text("断开本机 / 更换账号") }
     } else {
         val current = session!!
-        TabRow(minWidth = 0.dp, tabs = listOf("账号", "分享", "设备"), selectedTabIndex = section, onTabSelected = { section = it })
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(enabled = !busy, onClick = { runAction { loadInfo(); refreshAccount(current); notify("账号设置已刷新") } }) { Text(if (busy) "正在读取…" else "刷新账号") }
-            if (!connected || prefs.getBoolean("connection_invalid", false) || prefs.getString("device_id", "").isNullOrBlank()) Button(enabled = !busy, onClick = { runAction { enroll(current); refreshAccount(current); notify("本机已连接") } }) { Text("连接本机") }
+            if (page == 3 && (!connected || prefs.getBoolean("connection_invalid", false) || prefs.getString("device_id", "").isNullOrBlank())) Button(enabled = !busy, onClick = { runAction { enroll(current); refreshAccount(current); notify("本机已连接") } }) { Text("连接本机") }
         }
-        if (enrollmentConflict) {
+        if (enrollmentConflict && page == 3) {
             AccountNote(if (connected) "本机旧连接已失效或归属不符，请先显式断开，再连接本机。" else "登记请求无法继续。可以重新登记本机；设备数量已满时请先移除不用的设备。")
             Button(enabled = !busy, onClick = { if (connected) confirmAction = "disconnect" else confirmAction = "reenroll" }) { Text(if (connected) "断开失效连接" else "重新登记本机") }
         }
-        when (section) {
-            0 -> {
-                Card(Modifier.fillMaxWidth()) {
-                    ArrowPreference("分享给谁", summary = "QQ群与公开访客分别设置，影响此账号所有设备", onClick = { section = 1 })
-                    ArrowPreference("我的设备", summary = "查看和移除已连接的手机与电脑", onClick = { section = 2 })
-                }
-                AccountNote("账号属于当前服务。只有你允许上传的内容，才可能出现在已授权范围中。")
-                Button(enabled = !busy, onClick = { runAction {
-                    var revoked = false
-                    try { NativeAccountApi.request(current.server, "/v1/accounts/logout", JSONObject(), current); revoked = true }
-                    catch (cancel: CancellationException) { throw cancel }
-                    catch (_: Exception) { /* Local logout remains available while offline. */ }
-                    finally {
-                        NativeAccountStore.clearSession(this@ConnectionPage); session = null; me = null; editing = ""
-                        notify(if (revoked) "已退出账号管理，本机采集连接保留" else "已清除本机账号登录，服务端撤销未确认；本机采集连接保留")
-                    }
-                } }) { Text("退出账号管理") }
-            }
-            1 -> {
+        if (page == 2) {
+                if (editing.isNotEmpty()) Card(Modifier.fillMaxWidth()) { ArrowPreference("继续编辑未保存范围", summary = if (editing == "public") "公开访客 · ${selected.size} 项已选" else "群 $editing · ${selected.size} 项已选", onClick = { scopeVisible = true }) }
                 val account = me
                 if (account == null) AccountNote("请先刷新账号，读取当前分享范围。")
                 else {
@@ -258,8 +262,8 @@ private data class ScopeOption(val key: String, val label: String, val group: St
                     }
                     if (account.optJSONArray("qq").strings().isNotEmpty()) Button(enabled = !busy, onClick = { confirmAction = "qq" }) { Text("解除 QQ 绑定及全部群授权") }
                 }
-            }
-            2 -> {
+        } else {
+                Text("我的设备", style = MiuixTheme.textStyles.title3)
                 val devices = me?.optJSONArray("devices").objects()
                 if (devices.isEmpty()) AccountNote("尚未连接设备。点击“连接本机”即可登记这台手机。")
                 for (device in devices) {
@@ -270,11 +274,21 @@ private data class ScopeOption(val key: String, val label: String, val group: St
                 }
                 AccountNote("点击设备可移除连接。这里的“已接收”是连接记录，不代表设备此刻在线。")
                 if (connected) Button(enabled = !busy, onClick = { confirmAction = "disconnect" }) { Text("停止并断开本机") }
-            }
+                Button(enabled = !busy, onClick = { runAction {
+                    var revoked = false
+                    try { NativeAccountApi.request(current.server, "/v1/accounts/logout", JSONObject(), current); revoked = true }
+                    catch (cancel: CancellationException) { throw cancel }
+                    catch (_: Exception) { /* Local logout remains available while offline. */ }
+                    finally {
+                        NativeAccountStore.clearSession(this@ConnectionPage); session = null; me = null; editing = ""
+                        notify(if (revoked) "已退出账号管理，本机采集连接保留" else "已清除本机账号登录，服务端撤销未确认；本机采集连接保留")
+                    }
+                } }) { Text("退出账号管理") }
+                AccountNote("State of Me · " + packageManager.getPackageInfo(packageName, 0).versionName)
         }
     }
 
-    WindowDialog(show = recovery != null, title = "保存账号恢复码", summary = "忘记密码时可用它恢复账号。请私密保存，不要发到群里。", onDismissRequest = {}) {
+    WindowDialog(show = recovery != null && page == 3, title = "保存账号恢复码", summary = "忘记密码时可用它恢复账号。请私密保存，不要发到群里。", onDismissRequest = {}) {
         val value = recovery
         if (value != null) Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text("账号：${value.name}"); Text(value.code)
@@ -286,7 +300,7 @@ private data class ScopeOption(val key: String, val label: String, val group: St
             } }) { Text("我已保存，继续") }
         }
     }
-    WindowDialog(show = editing.isNotEmpty(), title = if (editing == "public") "公开分享范围" else "群 $editing 的可见范围", onDismissRequest = { if (!busy) editing = "" }) {
+    WindowDialog(show = scopeVisible && editing.isNotEmpty() && page == 2, title = if (editing == "public") "公开分享范围" else "群 $editing 的可见范围", onDismissRequest = { if (!busy) scopeVisible = false }) {
         Column(Modifier.heightIn(max = (androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp - 200).coerceAtLeast(260).dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             AccountNote(if (editing == "public") "任何访客都能读取勾选的数据，包括此账号以后连接的设备。只勾选你愿意公开的内容。" else "此群成员可以查询勾选的数据，影响此账号所有设备。")
             AccountNote("已选 ${selected.size} 项。范围已允许但设备未上传的内容不会凭空出现。新增字段默认不选中。")
@@ -300,22 +314,23 @@ private data class ScopeOption(val key: String, val label: String, val group: St
             }
             if (conflict) {
                 AccountNote("其他客户端可能已修改范围。你的草稿仍保留；可重新读取当前范围后再编辑。")
-                Button(enabled = !busy, onClick = { runAction { val current = session ?: return@runAction; refreshAccount(current); beginScope(editing); notify("已读取服务器范围，未保存草稿已替换") } }) { Text("重新读取并替换草稿") }
+                Button(enabled = !busy, onClick = { runAction { val current = session ?: return@runAction; refreshAccount(current); beginScope(editing, replaceDraft = true); notify("已读取服务器范围，未保存草稿已替换") } }) { Text("重新读取并替换草稿") }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(enabled = !busy, onClick = { editing = "" }) { Text("取消") }
+                Button(enabled = !busy, onClick = { scopeVisible = false }) { Text("稍后继续") }
                 Button(enabled = !busy && !conflict && catalog.isNotEmpty(), colors = ButtonDefaults.buttonColorsPrimary(), onClick = { runAction {
                     val current = session ?: return@runAction
                     val body = JSONObject().put("fields", JSONArray(selected.sorted())).put("expected_revision", editingRevision)
                     val path = if (editing == "public") "/v1/accounts/public" else "/v1/accounts/groups/scope"
                     if (editing != "public") body.put("group_id", editing)
                     NativeAccountApi.request(current.server, path, body, current)
-                    editing = ""; refreshAccount(current); notify("分享范围已保存，其他客户端刷新后会同步显示")
+                    editing = ""; scopeVisible = false; refreshAccount(current); notify("分享范围已保存，其他客户端刷新后会同步显示")
                 } }) { Text(if (busy) "正在保存…" else "保存范围") }
             }
+            Button(enabled = !busy, onClick = { editing = ""; selected = emptySet(); scopeVisible = false }) { Text("放弃修改") }
         }
     }
-    WindowDialog(show = confirmAction.isNotEmpty(), title = when(confirmAction) { "reenroll" -> "重新登记本机？"; "qq" -> "解除 QQ 绑定？"; "group" -> "移除此群授权？"; "device" -> "移除此设备？"; else -> "停止并断开本机？" }, summary = when(confirmAction) { "reenroll" -> "将结束上一次登记请求，创建新的设备连接。已撤销的连接不会自动恢复。"; "qq" -> "将撤回所有群查询权限。设备和公开分享保持当前设置。"; "group" -> "此群将无法查询你的数据，QQ 身份和其他群权限保留。"; "device" -> "此设备的数据和连接将被移除，需要重新登录连接才能恢复上传。"; else -> "停止本机采集，撤销本机连接，并清除本机分享选择和歌词索引。音乐文件保留。" }, onDismissRequest = { if (!busy) confirmAction = "" }) {
+    WindowDialog(show = confirmAction.isNotEmpty(), title = when(confirmAction) { "reenroll" -> "重新登记本机？"; "qq" -> "解除 QQ 绑定？"; "group" -> "移除此群授权？"; "device" -> "移除此设备？"; else -> "停止并断开本机？" }, summary = when(confirmAction) { "reenroll" -> "将结束上一次登记请求，创建新的设备连接。已撤销的连接不会自动恢复。"; "qq" -> "将撤回所有群查询权限。设备和公开分享保持当前设置。"; "group" -> "此群将无法查询你的数据，QQ 身份和其他群权限保留。"; "device" -> "此设备的数据和连接将被移除，需要重新登录连接才能恢复上传。"; else -> "停止本机采集，撤销本机连接，并清除本机采集选择和歌词索引。音乐文件保留。" }, onDismissRequest = { if (!busy) confirmAction = "" }) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(enabled = !busy, onClick = { confirmAction = "" }) { Text("取消") }
             Button(enabled = !busy, onClick = { runAction {

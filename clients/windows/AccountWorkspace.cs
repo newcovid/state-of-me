@@ -8,35 +8,41 @@ using Wpf.Ui.Appearance;
 namespace StateOfMe;
 
 /// <summary>Native account management, sharing and device enrolment.</summary>
-public sealed class AccountWindow : Wpf.Ui.Controls.FluentWindow
+public sealed class AccountWorkspace
 {
     readonly Settings settings; readonly AccountApi api; readonly Func<Task> deviceChanged;
-    readonly TextBlock notice = new() { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(24, 12, 24, 20) };
+    readonly TextBlock notice = new() { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 12, 0, 12) };
     readonly TabControl tabs = new();
     readonly TextBox endpoint = new(), username = new(); readonly PasswordBox password = new();
     readonly StackPanel accountPanel = new(), groupPanel = new(), publicPanel = new();
     readonly Dictionary<string, CheckBox> publicChecks = new(), groupChecks = new();
     readonly ComboBox groupChoice = new() { IsEditable = true, MinWidth = 240 };
     readonly TextBox bindCommand = new() { IsReadOnly = true };
-    JsonElement info, me; bool busy, recoverySaved; string recovery = ""; string renderedGroup = "";
+    long publicRevision, groupRevision; JsonElement info, me; bool busy, recoverySaved; string recovery = ""; string renderedGroup = "";
 
-    public AccountWindow(Settings settings, Func<Task> deviceChanged)
+    readonly Window owner; readonly Action openSettings;
+    public UserControl SettingsContent { get; } = new();
+    public UserControl SharingContent { get; } = new();
+    public AccountWorkspace(Window owner, Settings settings, Func<Task> deviceChanged, Action openSettings)
     {
-        this.settings = settings; api = new(settings); this.deviceChanged = deviceChanged;
-        Title = "账号与分享 · State of Me"; Width = 800; Height = 780; MinWidth = 640; MinHeight = 580;
-        WindowStartupLocation = WindowStartupLocation.CenterOwner; FontFamily = new System.Windows.Media.FontFamily("Segoe UI, Microsoft YaHei UI"); ExtendsContentIntoTitleBar = true;
-        SystemThemeWatcher.Watch(this);
-        var shell = new DockPanel(); var titleBar = new Wpf.Ui.Controls.TitleBar { Title = "State of Me · 账号与分享" }; DockPanel.SetDock(titleBar, Dock.Top); shell.Children.Add(titleBar); DockPanel.SetDock(notice, Dock.Bottom); shell.Children.Add(notice);
-        var intro = new StackPanel { Margin = new Thickness(24, 20, 24, 12) };
-        intro.Children.Add(Label("账号与分享", 25)); intro.Children.Add(Label("管理自己的设备，并决定每个群和公开访客能看到什么。", 13));
-        DockPanel.SetDock(intro, Dock.Top); shell.Children.Add(intro);
-        tabs.Items.Add(Tab("账号与设备", accountPanel)); tabs.Items.Add(Tab("QQ 群分享", groupPanel)); tabs.Items.Add(Tab("公开展示", publicPanel));
-        shell.Children.Add(tabs); Content = shell;
-        Loaded += async (_, _) => await Run(Initialize);
-        Closing += (_, e) => { if (busy) { e.Cancel = true; notice.Text = "请等待当前请求完成后关闭。"; return; } if (recovery.Length > 0 && !recoverySaved && MessageBox.Show(this, "恢复码尚未保存。关闭后将不能再次显示，要继续关闭吗？", "保存账号恢复码", MessageBoxButton.YesNo) != MessageBoxResult.Yes) e.Cancel = true; };
+        this.owner = owner; this.settings = settings; api = new(settings); this.deviceChanged = deviceChanged; this.openSettings = openSettings;
+        var accountRoot = new DockPanel(); DockPanel.SetDock(notice, Dock.Bottom); accountRoot.Children.Add(notice); accountRoot.Children.Add(accountPanel); SettingsContent.Content = accountRoot;
+        var shareRoot = new DockPanel(); var shareNotice = new TextBlock { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0,12,0,12) };
+        shareNotice.SetBinding(TextBlock.TextProperty, new System.Windows.Data.Binding("Text") { Source = notice }); DockPanel.SetDock(shareNotice, Dock.Bottom); shareRoot.Children.Add(shareNotice);
+        tabs.Items.Add(Tab("公开展示", publicPanel)); tabs.Items.Add(Tab("QQ 群", groupPanel)); shareRoot.Children.Add(tabs); SharingContent.Content = shareRoot;
     }
+    public event Action? StateChanged;
+    public bool IsBusy => busy;
+    public bool CanDisconnect => !busy && (recovery.Length == 0 || recoverySaved);
+    public Task InitializeAsync() => Run(Initialize);
+    public bool CanClose()
+    {
+        if (busy) { notice.Text = "请等待当前请求完成后关闭。"; return false; }
+        return recovery.Length == 0 || recoverySaved || MessageBox.Show(owner, "恢复码尚未保存。退出后将不能再次显示，要继续吗？", "保存账号恢复码", MessageBoxButton.YesNo) == MessageBoxResult.Yes;
+    }
+    public void ResetConnection() { endpoint.Text = settings.Endpoint; username.Text = ""; recovery = ""; RenderLogin(); }
     static TextBlock Label(string text, double size = 14) => new() { Text = text, FontSize = size, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 6, 0, 8) };
-    static TabItem Tab(string title, StackPanel panel) => new() { Header = title, Content = new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Margin = new Thickness(24, 12, 24, 12) } };
+    static TabItem Tab(string title, StackPanel panel) => new() { Header = title, Content = new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Margin = new Thickness(0, 12, 0, 12) } };
     Button Button(string text, Func<Task> work, bool primary = false)
     {
         var b = new Wpf.Ui.Controls.Button { Content = text, Margin = new Thickness(0, 6, 10, 8), Appearance = primary ? Wpf.Ui.Controls.ControlAppearance.Primary : Wpf.Ui.Controls.ControlAppearance.Secondary };
@@ -44,10 +50,10 @@ public sealed class AccountWindow : Wpf.Ui.Controls.FluentWindow
     }
     async Task Run(Func<Task> action)
     {
-        if (busy) return; busy = true; tabs.IsEnabled = false; notice.Text = "正在处理…";
+        if (busy) return; busy = true; tabs.IsEnabled = false; SettingsContent.IsEnabled = false; notice.Text = "正在处理…";
         try { await action(); }
         catch (Exception e) { if (me.ValueKind == JsonValueKind.Object && settings.AccountSession.Length < 24) { settings.ClearAccountSession(); settings.Save(); RenderLogin(); } notice.Text = e is InvalidOperationException ? e.Message : "暂时无法连接服务，请检查网络后重试。"; }
-        finally { busy = false; tabs.IsEnabled = true; }
+        finally { busy = false; tabs.IsEnabled = true; SettingsContent.IsEnabled = true; StateChanged?.Invoke(); }
     }
     string Endpoint => AccountApi.NormalizeEndpoint(endpoint.Text);
     static string String(JsonElement value, string key) => value.TryGetProperty(key, out var property) && property.ValueKind == JsonValueKind.String ? property.GetString()! : "";
@@ -66,8 +72,9 @@ public sealed class AccountWindow : Wpf.Ui.Controls.FluentWindow
     }
     void RenderLogin()
     {
-        me = default; accountPanel.Children.Clear(); groupPanel.Children.Clear(); publicPanel.Children.Clear();
+        me = default; publicChecks.Clear(); groupChecks.Clear(); renderedGroup = ""; publicRevision = groupRevision = 0; accountPanel.Children.Clear(); groupPanel.Children.Clear(); publicPanel.Children.Clear();
         groupPanel.Children.Add(Label("登录后，在这里验证 QQ 并管理各群的分享范围。")); publicPanel.Children.Add(Label("登录后，在这里选择公开字段。新账号默认不公开。"));
+        groupPanel.Children.Add(Button("前往设置登录", () => { openSettings(); return Task.CompletedTask; })); publicPanel.Children.Add(Button("前往设置登录", () => { openSettings(); return Task.CompletedTask; }));
         accountPanel.Children.Add(Label(settings.Token.Length >= 24 ? "当前设备已连接；登录一次即可在客户端管理账号。" : "登录后，本机会自动添加到你的账号。", 18));
         accountPanel.Children.Add(Label("服务地址")); endpoint.IsReadOnly = settings.Token.Length >= 24; accountPanel.Children.Add(endpoint);
         accountPanel.Children.Add(Label("账号名")); accountPanel.Children.Add(username);
@@ -82,7 +89,7 @@ public sealed class AccountWindow : Wpf.Ui.Controls.FluentWindow
         recoveryPanel.Children.Add(Button("使用恢复码重设密码", async () => {
             var target = Endpoint; var name = username.Text.Trim().ToLowerInvariant();
             if (settings.Token.Length >= 24 && (AccountApi.NormalizeEndpoint(settings.Endpoint) != target || !string.Equals(settings.Account, name, StringComparison.OrdinalIgnoreCase)))
-                throw new InvalidOperationException("本机连接到另一个账号。请先在主窗口断开设备，再恢复其他账号。");
+                throw new InvalidOperationException("本机连接到另一个账号。请先在设置页断开设备，再恢复其他账号。");
             if (name.Length == 0 || recoveryInput.Password.Length == 0 || replacementPassword.Password.Length == 0) throw new InvalidOperationException("请填写账号、恢复码和新密码。");
             if (!Confirm("重设密码会立即撤销此账号的全部登录会话和设备凭据。所有设备都需要重新登录登记。继续吗？", "重设密码并撤销旧连接")) return;
             JsonElement result;
@@ -90,11 +97,11 @@ public sealed class AccountWindow : Wpf.Ui.Controls.FluentWindow
             finally { recoveryInput.Clear(); replacementPassword.Clear(); password.Clear(); }
             settings.ClearAccountSession(); settings.Save(); recovery = String(result, "recovery"); recoverySaved = false;
             RenderLogin(); accountPanel.Children.Clear(); accountPanel.Children.Add(Label("密码已重设，请先保存新的恢复码", 20));
-            accountPanel.Children.Add(Label("旧恢复码已失效。全部设备已在服务器撤销；本机如仍显示旧连接，请关闭此窗口，在主窗口断开后重新登录。", 13));
+            accountPanel.Children.Add(Label("旧恢复码已失效。全部设备已在服务器撤销；本机如仍显示旧连接，请在本页下方断开本机后重新登录。", 13));
             accountPanel.Children.Add(new TextBox { Text = recovery, IsReadOnly = true, TextWrapping = TextWrapping.Wrap });
             accountPanel.Children.Add(Button("保存新的恢复码文件", () => {
                 var picker = new SaveFileDialog { FileName = "StateOfMe-恢复码.txt", Filter = "文本文件|*.txt" };
-                if (picker.ShowDialog(this) == true) { File.WriteAllText(picker.FileName, "State of Me\n服务：" + target + "\n账号：" + name + "\n恢复码：" + recovery, Encoding.UTF8); recoverySaved = true; notice.Text = "新恢复码已保存，请重新登录登记设备。"; }
+                if (picker.ShowDialog(owner) == true) { File.WriteAllText(picker.FileName, "State of Me\n服务：" + target + "\n账号：" + name + "\n恢复码：" + recovery, Encoding.UTF8); recoverySaved = true; notice.Text = "新恢复码已保存，请重新登录登记设备。"; }
                 return Task.CompletedTask;
             }, true));
             accountPanel.Children.Add(Button("返回登录", () => { if (!recoverySaved) throw new InvalidOperationException("请先保存新的恢复码。"); recovery = ""; RenderLogin(); return Task.CompletedTask; }));
@@ -108,7 +115,7 @@ public sealed class AccountWindow : Wpf.Ui.Controls.FluentWindow
     {
         var target = Endpoint; var name = username.Text.Trim().ToLowerInvariant(); var secret = password.Password;
         if (settings.Token.Length >= 24 && (!string.Equals(settings.Account, name, StringComparison.OrdinalIgnoreCase) || AccountApi.NormalizeEndpoint(settings.Endpoint) != target))
-            throw new InvalidOperationException("本机仍连接到 " + settings.Account + "。如需换账号，请先在主窗口断开此设备。");
+            throw new InvalidOperationException("本机仍连接到 " + settings.Account + "。如需换账号，请先在设置页断开此设备。");
         if (name.Length == 0 || secret.Length == 0) throw new InvalidOperationException("请填写账号与密码。");
         info = await api.Request(target, "/v1/accounts/info", authenticated: false);
         if (register && (!info.TryGetProperty("registration", out var allowed) || !allowed.GetBoolean())) throw new InvalidOperationException("此服务未开放注册，请联系维护者。");
@@ -133,24 +140,40 @@ public sealed class AccountWindow : Wpf.Ui.Controls.FluentWindow
         if (token.Length < 24 || account != settings.NativeAccount) throw new InvalidOperationException("服务返回的设备归属无法确认，请重试。");
         settings.EnrollmentId = ""; settings.Account = account; settings.Token = token; settings.ConnectionInvalid = false; if (!existed) settings.Enabled = false; settings.Save(); await deviceChanged();
     }
-    async Task Refresh()
+    Task Refresh() => RefreshCore();
+    static string[] Selected(Dictionary<string, CheckBox> checks) => checks.Where(x => x.Value.IsChecked == true).Select(x => x.Key).ToArray();
+    async Task RefreshCore(string savedAudience = "", string? requestedGroup = null)
     {
+        var publicDraft = savedAudience == "public" || me.ValueKind != JsonValueKind.Object ? null : ScopeDraft.Capture(Strings(me,"public_fields"), Selected(publicChecks), publicRevision);
+        var group = requestedGroup ?? renderedGroup;
+        var previousGroupFields = me.ValueKind == JsonValueKind.Object && me.TryGetProperty("group_scopes", out var oldGroups) ? Strings(oldGroups, renderedGroup) : Array.Empty<string>();
+        var groupDraft = savedAudience == "group" || renderedGroup.Length == 0 ? null : ScopeDraft.Capture(previousGroupFields, Selected(groupChecks), groupRevision);
         try { me = await api.Request(Endpoint, "/v1/accounts/me"); }
         catch { if (settings.AccountSession.Length == 0) RenderLogin(); throw; }
         info = await api.Request(Endpoint, "/v1/accounts/info", authenticated: false);
-        RenderAccount(); RenderGroups(); RenderPublic(); notice.Text = "已读取服务器上的最新设置。修改分享范围后请保存。";
+        RenderAccount(); RenderGroups(); RenderPublic();
+        if (publicDraft != null) { foreach (var entry in publicChecks) entry.Value.IsChecked = publicDraft.Fields.Contains(entry.Key); publicRevision = publicDraft.Revision; }
+        if (group.Length > 0) {
+            groupChoice.Text = group;
+            if (Strings(me,"groups").Contains(group)) await LoadGroupScope();
+            if (groupDraft != null) {
+                renderedGroup = group; groupRevision = me.GetProperty("scope_revision").GetInt64(); groupChecks.Clear();
+                var panel = groupPanel.Children.OfType<StackPanel>().First(x => Equals(x.Tag,"scope-choices")); panel.Children.Clear(); AddScopes(panel, groupChecks, groupDraft.Fields); groupRevision = groupDraft.Revision;
+            }
+        }
+        notice.Text = publicDraft != null || groupDraft != null ? "服务器状态已刷新，未保存的分享草稿及原版本保留。若保存发生冲突，请重新读取对应范围后再确认修改。" : "已读取服务器上的最新设置。修改分享范围后请保存。";
     }
     void RenderAccount()
     {
         accountPanel.Children.Clear();
-        accountPanel.Children.Add(Label("✓ 已登录 " + String(me, "name"), 20)); accountPanel.Children.Add(Label(Endpoint, 12));
+        accountPanel.Children.Add(Label("账号管理已登录：" + String(me, "name"), 20)); accountPanel.Children.Add(Label(Endpoint, 12));
         var controls = new WrapPanel(); controls.Children.Add(Button("刷新账号", Refresh)); controls.Children.Add(Button("退出账号管理", Logout)); accountPanel.Children.Add(controls);
-        accountPanel.Children.Add(Label("退出账号管理只清除本机登录会话，设备后台分享仍按当前设置运行。", 12));
+        accountPanel.Children.Add(Label("退出账号管理只清除本机登录会话，设备后台同步仍按当前设置运行。", 12));
         if (recovery.Length > 0)
         {
             accountPanel.Children.Add(Label("保存恢复码", 18)); accountPanel.Children.Add(Label("忘记密码时需要它。恢复码只显示这一次，请保存到私密位置。", 12));
             accountPanel.Children.Add(new TextBox { Text = recovery, IsReadOnly = true, TextWrapping = TextWrapping.Wrap });
-            accountPanel.Children.Add(Button("保存恢复码文件", () => { var picker = new SaveFileDialog { FileName = "StateOfMe-恢复码.txt", Filter = "文本文件|*.txt" }; if (picker.ShowDialog(this) == true) { File.WriteAllText(picker.FileName, "State of Me\n服务：" + Endpoint + "\n账号：" + settings.NativeAccount + "\n恢复码：" + recovery, Encoding.UTF8); recoverySaved = true; notice.Text = "恢复码已保存，请私密保管。"; } return Task.CompletedTask; }));
+            accountPanel.Children.Add(Button("保存恢复码文件", () => { var picker = new SaveFileDialog { FileName = "StateOfMe-恢复码.txt", Filter = "文本文件|*.txt" }; if (picker.ShowDialog(owner) == true) { File.WriteAllText(picker.FileName, "State of Me\n服务：" + Endpoint + "\n账号：" + settings.NativeAccount + "\n恢复码：" + recovery, Encoding.UTF8); recoverySaved = true; notice.Text = "恢复码已保存，请私密保管。"; } return Task.CompletedTask; }));
         }
         if (settings.Token.Length < 24) accountPanel.Children.Add(Button("将本机添加到账号", async () => { await Enroll(); await Refresh(); }));
         if (settings.Token.Length < 24 && settings.EnrollmentId.Length > 0) accountPanel.Children.Add(Button("重新开始设备登记", () => { if (!Confirm("仅在服务器提示原登记已撤销时使用。网络超时请继续原登记，避免重复设备。确认开始一次新的登记？", "重置登记请求")) return Task.CompletedTask; settings.EnrollmentId = ""; settings.Save(); notice.Text = "已重置，请点击将本机添加到账号。"; return Task.CompletedTask; }));
@@ -164,11 +187,12 @@ public sealed class AccountWindow : Wpf.Ui.Controls.FluentWindow
     }
     async Task Logout()
     {
+        if (recovery.Length > 0 && !recoverySaved) throw new InvalidOperationException("请先保存恢复码，再退出账号管理。");
         try { await api.Request(Endpoint, "/v1/accounts/logout", new { }); }
         finally { settings.ClearAccountSession(); settings.Save(); recovery = ""; RenderLogin(); }
-        notice.Text = "已退出账号管理，本机采集连接未改变。";
+        notice.Text = "已退出账号管理，本机同步连接未改变。";
     }
-    bool Confirm(string text, string title) => MessageBox.Show(this, text, title, MessageBoxButton.YesNo, MessageBoxImage.Question) == MessageBoxResult.Yes;
+    bool Confirm(string text, string title) => MessageBox.Show(owner, text, title, MessageBoxButton.YesNo, MessageBoxImage.Question) == MessageBoxResult.Yes;
     void RenderGroups()
     {
         groupPanel.Children.Clear(); groupChecks.Clear(); renderedGroup = "";
@@ -186,18 +210,18 @@ public sealed class AccountWindow : Wpf.Ui.Controls.FluentWindow
         controls.Children.Add(Button("生成 QQ 验证命令", async () => { var group = groupChoice.Text.Trim(); if (!System.Text.RegularExpressions.Regex.IsMatch(group, "^\\d{5,12}$")) throw new InvalidOperationException("请输入正确的群号。"); if (!Confirm("将在群 " + group + " 验证身份。确认后可按字段调整查询范围。", "验证 QQ")) return; var result = await api.Request(Endpoint, "/v1/accounts/bind-code", new { group_id = group, consent = true }); bindCommand.Text = "/状态绑定 " + String(result, "code"); notice.Text = "在该群发送此命令，再点击刷新，核对 QQ 后确认。"; }));
         controls.Children.Add(Button("复制验证命令", () => { if (bindCommand.Text.Length == 0) throw new InvalidOperationException("请先生成验证命令。"); Clipboard.SetText(bindCommand.Text); notice.Text = "命令已复制，请发送到所填 QQ 群。"; return Task.CompletedTask; }));
         controls.Children.Add(Button("刷新验证结果", Refresh)); groupPanel.Children.Add(controls);
-        groupPanel.Children.Add(Button("读取此群的分享范围", async () => { await LoadGroupScope(); }));
+        groupPanel.Children.Add(Button("读取此群的分享范围", async () => { var requested = groupChoice.Text.Trim(); if (renderedGroup.Length > 0 && !Confirm("重新读取将丢弃当前群尚未保存的选择，继续吗？", "重新读取群范围")) return; await RefreshCore("group", requested); if (!Strings(me,"groups").Contains(requested)) throw new InvalidOperationException("请先为这个群完成 QQ 验证和确认。"); }));
         groupPanel.Children.Add(Label("选择分享字段", 18));
         var choices = new StackPanel(); choices.Tag = "scope-choices"; groupPanel.Children.Add(choices);
-        groupPanel.Children.Add(Button("保存此群分享范围", async () => { var group = groupChoice.Text.Trim(); if (group != renderedGroup) throw new InvalidOperationException("请先读取这个群的分享范围，再保存。"); var fields = groupChecks.Where(x => x.Value.IsChecked == true).Select(x => x.Key).ToArray(); await api.Request(Endpoint, "/v1/accounts/groups/scope", new { group_id = group, fields, expected_revision = me.GetProperty("scope_revision").GetInt64() }); await Refresh(); notice.Text = "群分享范围已保存。手机和网页会读取相同设置。"; }, true));
-        groupPanel.Children.Add(Button("撤回此群全部授权", async () => { var id = groupChoice.Text.Trim(); if (!Confirm("撤回群 " + id + " 的全部查询权限？", "撤回群授权")) return; await api.Request(Endpoint, "/v1/accounts/groups/revoke", new { id }); await Refresh(); }));
-        if (qq.Length > 0) groupPanel.Children.Add(Button("解除 QQ 绑定", async () => { if (!Confirm("解除 QQ 身份并撤回全部群授权？", "解除 QQ")) return; await api.Request(Endpoint, "/v1/accounts/qq/unbind", new { }); await Refresh(); }));
+        groupPanel.Children.Add(Button("保存此群分享范围", async () => { var group = groupChoice.Text.Trim(); if (group != renderedGroup) throw new InvalidOperationException("请先读取这个群的分享范围，再保存。"); var fields = groupChecks.Where(x => x.Value.IsChecked == true).Select(x => x.Key).ToArray(); await api.Request(Endpoint, "/v1/accounts/groups/scope", new { group_id = group, fields, expected_revision = groupRevision }); await RefreshCore("group"); notice.Text = "群分享范围已保存。手机和网页会读取相同设置。"; }, true));
+        groupPanel.Children.Add(Button("撤回此群全部授权", async () => { var id = groupChoice.Text.Trim(); if (!Confirm("撤回群 " + id + " 的全部查询权限？", "撤回群授权")) return; await api.Request(Endpoint, "/v1/accounts/groups/revoke", new { id }); if (id == renderedGroup) await RefreshCore("group", ""); else await Refresh(); }));
+        if (qq.Length > 0) groupPanel.Children.Add(Button("解除 QQ 绑定", async () => { if (!Confirm("解除 QQ 身份并撤回全部群授权？", "解除 QQ")) return; await api.Request(Endpoint, "/v1/accounts/qq/unbind", new { }); await RefreshCore("group", ""); }));
     }
     Task LoadGroupScope()
     {
         var group = groupChoice.Text.Trim();
         if (!Strings(me, "groups").Contains(group)) throw new InvalidOperationException("请先为这个群完成 QQ 验证和确认。");
-        renderedGroup = group; groupChecks.Clear();
+        renderedGroup = group; groupRevision = me.GetProperty("scope_revision").GetInt64(); groupChecks.Clear();
         var selected = me.TryGetProperty("group_scopes", out var scopes) ? Strings(scopes, group) : Array.Empty<string>();
         var panel = groupPanel.Children.OfType<StackPanel>().First(x => Equals(x.Tag, "scope-choices")); panel.Children.Clear(); AddScopes(panel, groupChecks, selected);
         notice.Text = "正在编辑群 " + group + "。勾选字段后保存，未勾选的内容不向该群展示。"; return Task.CompletedTask;
@@ -221,12 +245,13 @@ public sealed class AccountWindow : Wpf.Ui.Controls.FluentWindow
     }
     void RenderPublic()
     {
-        publicPanel.Children.Clear(); publicChecks.Clear();
+        publicPanel.Children.Clear(); publicChecks.Clear(); publicRevision = me.GetProperty("scope_revision").GetInt64();
         publicPanel.Children.Add(Label("访客可以看到哪些内容", 20));
         publicPanel.Children.Add(Label("这里勾选并保存的内容，任何获得公开页面或博客卡片地址的人都能查看。可以全部不选，或只公开少量字段；新增字段不会自动勾选。", 13));
+        publicPanel.Children.Add(Button("重新读取公开范围", async () => { if (!Confirm("重新读取将丢弃公开范围尚未保存的选择，继续吗？", "重新读取公开范围")) return; await RefreshCore("public"); }));
         AddScopes(publicPanel, publicChecks, Strings(me, "public_fields"));
-        publicPanel.Children.Add(Button("保存公开范围", async () => { var fields = publicChecks.Where(x => x.Value.IsChecked == true).Select(x => x.Key).ToArray(); var names = publicChecks.Where(x => x.Value.IsChecked == true).Select(x => x.Value.Content?.ToString()); if (!Confirm(fields.Length == 0 ? "关闭全部公开展示？" : "以下内容将向所有访客公开：\n" + string.Join("、", names), "确认公开范围")) return; await api.Request(Endpoint, "/v1/accounts/public", new { fields, expected_revision = me.GetProperty("scope_revision").GetInt64() }); await Refresh(); notice.Text = fields.Length == 0 ? "公开展示已关闭。" : "公开范围已保存，博客卡片会按已公开字段更新。"; }, true));
-        publicPanel.Children.Add(Button("关闭全部公开展示", async () => { if (!Confirm("关闭这个账号的全部公开展示？", "关闭公开展示")) return; await api.Request(Endpoint, "/v1/accounts/public", new { fields = Array.Empty<string>(), expected_revision = me.GetProperty("scope_revision").GetInt64() }); await Refresh(); }));
+        publicPanel.Children.Add(Button("保存公开范围", async () => { var fields = publicChecks.Where(x => x.Value.IsChecked == true).Select(x => x.Key).ToArray(); var names = publicChecks.Where(x => x.Value.IsChecked == true).Select(x => x.Value.Content?.ToString()); if (!Confirm(fields.Length == 0 ? "关闭全部公开展示？" : "以下内容将向所有访客公开：\n" + string.Join("、", names), "确认公开范围")) return; await api.Request(Endpoint, "/v1/accounts/public", new { fields, expected_revision = publicRevision }); await RefreshCore("public"); notice.Text = fields.Length == 0 ? "公开展示已关闭。" : "公开范围已保存，博客卡片会按已公开字段更新。"; }, true));
+        publicPanel.Children.Add(Button("关闭全部公开展示", async () => { if (!Confirm("关闭这个账号的全部公开展示？", "关闭公开展示")) return; await api.Request(Endpoint, "/v1/accounts/public", new { fields = Array.Empty<string>(), expected_revision = publicRevision }); await RefreshCore("public"); }));
         publicPanel.Children.Add(Button("复制公开页面地址", () => { Clipboard.SetText(Endpoint + "/?user=" + Uri.EscapeDataString(settings.NativeAccount)); notice.Text = "公开页面地址已复制。页面只包含服务器已授权的字段。"; return Task.CompletedTask; }));
     }
 }
