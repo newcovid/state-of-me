@@ -44,7 +44,7 @@ Caddy 独立域名示例（替换域名）：
 ```caddyfile
 status.example.com {
     request_body {
-        max_size 16KB
+        max_size 16KiB
     }
     reverse_proxy 127.0.0.1:8080
 }
@@ -56,11 +56,13 @@ status.example.com {
 redir /presence /presence/ 308
 handle_path /presence/* {
     request_body {
-        max_size 16KB
+        max_size 16KiB
     }
     reverse_proxy 127.0.0.1:8080
 }
 ```
+
+代理示例依据 Caddy 官方 [handle_path](https://caddyserver.com/docs/caddyfile/directives/handle_path) 与 [request_body](https://caddyserver.com/docs/caddyfile/directives/request_body) 文档。
 
 后端没有硬编码部署前缀。客户端、AstrBot `url` 必须包含你实际使用的 `/presence`；`accounts.origin` 只包含 `https://example.com`，初始化工具已自动处理。不要缓存账号、配对或状态响应。
 

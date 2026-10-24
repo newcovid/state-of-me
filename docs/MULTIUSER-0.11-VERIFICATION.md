@@ -1,6 +1,6 @@
 # 0.11 verification record
 
-- Backend and AstrBot: 45 automated tests passed, including two-tenant isolation, binding candidate confirmation, per-group revocation, legacy-owner migration, pairing secret/revoke, cross-tab account guard and recovery rotation.
+- Backend and AstrBot: 48 automated tests passed, including two-tenant isolation, binding candidate confirmation, per-group revocation, legacy-owner migration, pairing secret/revoke, cross-tab account guard and recovery rotation.
 - Web: playback/widget contract tests passed. Live browser registered a disposable account, reviewed a synthetic device, approved pairing, received a synthetic snapshot, rendered human-readable status, and logged out. Both public and group authorization were off by default. Temporary account and device were removed afterward.
 - Android: release build/lint passed; versionCode 12, 0.11.0 installed over the existing signing identity on OnePlus 13T. Existing sharing resumed. Actual permission dialog showed granted checkmarks for music access, usage access and notifications. Device permissions were not revoked for testing. Denied-permission/first-install OEM paths and browser process-recreation flow still need human/device testing.
 - Windows: release self-contained build and policy/DPAPI/lyrics/WhatPulse tests passed. A serialization regression check ensures Token is not saved in plaintext. The existing local 0.10 process remained running; 0.11 is packaged for manual tray-exit-and-relaunch testing.
@@ -9,3 +9,5 @@
 - UX sub-agent reviewed first-use and account switching twice; identified and fixed stale confirmation identity, missing copy command, unhelpful network/logout state, permission repetition, expired directory access, transient Android pairing state and multi-account mutation confusion.
 
 This is a development preview, not a cross-vendor Android permission certification or a large-scale public account-service capacity claim.
+
+Clean-install CI on commit b4aaa82c29e94d6dbece73bc914235f8954b0db6 passed in a fresh GitHub Linux runner: initializer-generated empty-tenant config, non-root Docker Compose build/start, registration, pairing, ingest, private public endpoint, QQ candidate+confirmation and token revocation. No production configuration was used. Run: https://github.com/newcovid/state-of-me/actions/runs/40076594090 . DNS/certificate issuance for a third-party domain remains the self-hosting operator's responsibility.
